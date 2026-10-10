@@ -87,7 +87,7 @@ sin imprimir contraseñas.
 ## Compilar y verificar
 
 ```bash
-./mvnw -B -ntp verify
+./mvnw -B -ntp clean verify
 ```
 
 Compila, ejecuta pruebas y empaqueta `target/appointment-0.0.1-SNAPSHOT.jar`.
@@ -95,17 +95,54 @@ Testcontainers administra un MySQL 8.4.8 temporal: Docker debe estar accesible.
 Las pruebas no usan `.env`, la base de desarrollo ni servicios reales de cátedra/Catálogo.
 Comprueban SQL exclusivo de test e historial Flyway, health HTTP sin detalles y
 rechazo de configuración inválida/base inaccesible, con diagnósticos sin la contraseña ficticia.
-Reportes en `target/surefire-reports/`.
+Reportes de pruebas en `target/surefire-reports/`. JaCoCo mide la cobertura de
+las pruebas y genera `target/site/jacoco/jacoco.xml` e `index.html` durante `verify`.
+El HTML se puede abrir localmente; el XML es el que importa Sonar.
 
 El almacenamiento del volumen de Compose se comprueba por separado,
 confirmando un dato ficticio y recreando contenedores sin borrar el volumen.
 La evidencia local y sus límites se registran en [TASKS.md](docs/features/setup-backend/TASKS.md).
-CI y calidad remota pertenecen al [issue #17](https://github.com/prog2-perassiferrara/backend-turnos/issues/17);
-esta etapa no demuestra ejecución de Actions ni resultados de Sonar.
+
+## CI y calidad
+
+[El workflow](.github/workflows/ci.yml) ejecuta `clean verify` con Java 25 y,
+si pasa, `sonar:sonar` en otro paso del mismo job. Testcontainers administra
+MySQL temporal, sin Compose, `.env` ni base adicional en Actions.
+
+Se activa por pushes a `main` y PR dirigidos a `main` al abrirlos, reabrirlos,
+actualizar commits o editarlos. Cambiar el destino del PR a `main` activa CI
+sin agregar un commit; editar título/descripción también repite la ejecución.
+La concurrencia por workflow/referencia cancela una ejecución anterior si
+se inicia otra para esa referencia.
+
+Un PR apilado sobre otra rama, como la de setup #3, no ejecuta este workflow.
+Validarlo localmente hasta integrar el PR base y cambiar su destino a `main`.
+Este alcance es compatible con el plan Free de SonarQube Cloud.
+
+El análisis publica en [el proyecto de Turnos](https://sonarcloud.io/project/overview?id=prog2-perassiferrara_backend-turnos),
+organización `prog2-perassiferrara`. Sonar importa la cobertura de JaCoCo y
+publica hallazgos y Quality Gate; no genera la medición de cobertura.
+El Gate es informativo (`sonar.qualitygate.wait=false`); los errores de compilación,
+pruebas o ejecución/publicación del scanner sí hacen fallar el job.
+No se configura un mínimo de cobertura ni se ocultan errores.
+
+`SONAR_TOKEN` ya está cargado como secreto de GitHub y Automatic Analysis
+desactivado, según confirmación del usuario. El token se entrega únicamente
+al paso de análisis; no debe guardarse en archivos ni imprimirse. En PR de
+forks se ejecutan las pruebas y se omite el análisis por ausencia de secretos.
+Si falta el token en un análisis habilitado, el job falla con un diagnóstico.
+
+No se suben artefactos descargables de cobertura: los informes se consultan
+localmente y la cobertura remota en Sonar. La validación local no demuestra
+ejecución de Actions, importación en Sonar ni estado del Gate. Consultar
+[SPEC](docs/features/ci-calidad/SPEC.md), [PLAN](docs/features/ci-calidad/PLAN.md)
+y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
+[issue #17](https://github.com/prog2-perassiferrara/backend-turnos/issues/17).
 
 ## Archivos y responsabilidades
 
-- `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot.
+- `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot; JaCoCo genera cobertura y SonarScanner publica el análisis.
+- `.github/workflows/ci.yml`: eventos, entorno y pasos de validación remota; el secreto queda limitado al scanner.
 - `AppointmentApplication`: punto de entrada del contexto y servidor HTTP.
 - `DatabaseConfiguration`: validación temprana de variables obligatorias mediante un procesador de Spring.
 - `application.yaml`: conexión, límites de espera, JPA, Flyway y exposición mínima de Actuator.
