@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: appointment
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME}?connectTimeout=5000&socketTimeout=10000
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      connection-timeout: 10000
+      initialization-fail-timeout: 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: true
+    connect-retries: 0
+
+server:
+  port: ${APP_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      discovery:
+        enabled: false
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: false
+      show-details: never
+      show-components: never
