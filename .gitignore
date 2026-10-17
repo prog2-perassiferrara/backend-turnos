@@ -13,6 +13,9 @@ build/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+secrets/
 
 # Logs
 *.log

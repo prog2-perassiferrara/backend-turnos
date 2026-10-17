@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,6 +29,7 @@ import org.springframework.test.context.TestConstructor;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+import com.prog2.appointment.integration.TestIntegrationSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AppointmentApplicationTests {
 
     private static final String TEST_PASSWORD = "fictional-test-password";
+    private static final TestIntegrationSupport INTEGRATION = new TestIntegrationSupport();
 
     @Container
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.8")
@@ -57,6 +60,7 @@ class AppointmentApplicationTests {
      */
     @DynamicPropertySource
     static void databaseSettings(DynamicPropertyRegistry registry) {
+        INTEGRATION.settings().forEach((name, value) -> registry.add(name, () -> value));
         registry.add("DB_HOST", MYSQL::getHost);
         registry.add("DB_PORT", MYSQL::getFirstMappedPort);
         registry.add("DB_NAME", MYSQL::getDatabaseName);
@@ -152,12 +156,18 @@ class AppointmentApplicationTests {
 
     private static Map<String, String> validSettings() {
         Map<String, String> settings = new LinkedHashMap<>();
+        settings.putAll(INTEGRATION.settings());
         settings.put("DB_HOST", MYSQL.getHost());
         settings.put("DB_PORT", Integer.toString(MYSQL.getFirstMappedPort()));
         settings.put("DB_NAME", MYSQL.getDatabaseName());
         settings.put("DB_USER", MYSQL.getUsername());
         settings.put("DB_PASSWORD", MYSQL.getPassword());
         return settings;
+    }
+
+    @AfterAll
+    static void closeFictionalProviders() {
+        INTEGRATION.close();
     }
 
     /**

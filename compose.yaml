@@ -26,11 +26,32 @@ services:
       DB_USER: ${DB_USER:?Definir DB_USER}
       DB_PASSWORD: ${DB_PASSWORD:?Definir DB_PASSWORD}
       APP_PORT: 8080
+      CATALOG_BASE_URL: http://catalog:8080
+      CATEDRA_BASE_URL: ${CATEDRA_BASE_URL:?Definir CATEDRA_BASE_URL}
+      CATEDRA_GROUP_ID: ${CATEDRA_GROUP_ID:?Definir CATEDRA_GROUP_ID}
+      JWT_PRIVATE_KEY_PATH: /run/secrets/private.pem
+    volumes:
+      - type: bind
+        source: ${JWT_PRIVATE_KEY_PATH:?Definir JWT_PRIVATE_KEY_PATH}
+        target: /run/secrets/private.pem
+        read_only: true
+        bind:
+          create_host_path: false
+          selinux: Z
     ports:
       - "127.0.0.1:${APP_PORT:-8081}:8080"
+    networks:
+      - default
+      - services
     depends_on:
       mysql:
         condition: service_healthy
+
+networks:
+  default: {}
+  services:
+    name: prog2-services
+    external: true
 
 volumes:
   appointment-mysql-data:
