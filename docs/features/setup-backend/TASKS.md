@@ -42,3 +42,9 @@
 La comprobación usó puertos libres y credenciales ficticias temporales fuera del repositorio. Se detuvo el proceso Java propio y se eliminaron únicamente los contenedores, red y volumen del proyecto de comprobación, después de demostrar persistencia. No se usaron `.env` ni servicios reales.
 
 No se validó Windows. CI #17, análisis remoto e integración con servicios reales no forman parte de esta evidencia. Sin commits, push ni merge; Catálogo se consultó sin modificarlo. La SPEC de #17 está separada en `docs/features/ci-calidad/` y no pertenece al commit de #3.
+
+### Inyección por constructor en pruebas
+
+El 2026-10-14 el usuario autorizó aplicar la convención compartida también a las pruebas de ambos backends. `AppointmentApplicationTests` recibe `JdbcTemplate` por constructor y lo conserva en un campo `final`, sin `@Autowired`. `@TestConstructor(autowireMode = ALL)` configura la resolución de parámetros del constructor por Spring Test; no cambia arranque, persistencia ni aserciones.
+
+`./mvnw -o -B -ntp verify` finalizó 19:54:13 -03:00: BUILD SUCCESS, 10 pruebas, 0 fallos/errores/omisiones. Escaneo de secretos sin hallazgos y `git diff --check` correcto. No quedan usos de `@Autowired` en fuentes de Turnos. La consulta al plugin del IDE devolvió HTTP 500 porque los archivos de este repo no están indexados en el IDE consultado; no constituye un análisis local exitoso. Sin cambios a otras funcionalidades de Turnos ni operaciones Git mutables.
