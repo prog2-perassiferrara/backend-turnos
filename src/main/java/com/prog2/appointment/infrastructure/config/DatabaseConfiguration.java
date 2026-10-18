@@ -16,6 +16,10 @@ import org.springframework.util.StringUtils;
 @Configuration(proxyBeanMethods = false)
 public class DatabaseConfiguration {
 
+    /** Spring instancia esta configuración sin proxy; no necesita construcción pública. */
+    private DatabaseConfiguration() {
+    }
+
     /**
      * Registra la validación temprana mediante el punto de extensión de Spring.
      * El procesador lanza {@link BeanCreationException} si falta una variable obligatoria

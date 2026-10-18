@@ -10,25 +10,26 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestConstructor;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+import com.prog2.appointment.integration.TestIntegrationSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,9 +41,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ExtendWith(OutputCaptureExtension.class)
+@TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 class AppointmentApplicationTests {
 
     private static final String TEST_PASSWORD = "fictional-test-password";
+    private static final TestIntegrationSupport INTEGRATION = new TestIntegrationSupport();
 
     @Container
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.8")
@@ -57,6 +60,7 @@ class AppointmentApplicationTests {
      */
     @DynamicPropertySource
     static void databaseSettings(DynamicPropertyRegistry registry) {
+        INTEGRATION.settings().forEach((name, value) -> registry.add(name, () -> value));
         registry.add("DB_HOST", MYSQL::getHost);
         registry.add("DB_PORT", MYSQL::getFirstMappedPort);
         registry.add("DB_NAME", MYSQL::getDatabaseName);
@@ -67,8 +71,12 @@ class AppointmentApplicationTests {
     @LocalServerPort
     private int port;
 
-    @Autowired
-    private JdbcTemplate jdbc;
+    private final JdbcTemplate jdbc;
+
+    /** Spring entrega el acceso JDBC del contexto aislado mediante el constructor. */
+    AppointmentApplicationTests(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
 
     @Test
     void appliesFlywayMigrationAndPersistsItsData() {
@@ -139,7 +147,7 @@ class AppointmentApplicationTests {
         assertThat(output).contains("Communications link failure").doesNotContain(TEST_PASSWORD);
     }
 
-    private HttpResponse<String> get(String path) throws Exception {
+    private HttpResponse<String> get(String path) throws java.io.IOException, InterruptedException {
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
             return client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                     .timeout(Duration.ofSeconds(5)).GET().build(), HttpResponse.BodyHandlers.ofString());
@@ -148,12 +156,18 @@ class AppointmentApplicationTests {
 
     private static Map<String, String> validSettings() {
         Map<String, String> settings = new LinkedHashMap<>();
+        settings.putAll(INTEGRATION.settings());
         settings.put("DB_HOST", MYSQL.getHost());
         settings.put("DB_PORT", Integer.toString(MYSQL.getFirstMappedPort()));
         settings.put("DB_NAME", MYSQL.getDatabaseName());
         settings.put("DB_USER", MYSQL.getUsername());
         settings.put("DB_PASSWORD", MYSQL.getPassword());
         return settings;
+    }
+
+    @AfterAll
+    static void closeFictionalProviders() {
+        INTEGRATION.close();
     }
 
     /**
@@ -173,7 +187,7 @@ class AppointmentApplicationTests {
                 .map(entry -> "--" + entry.getKey() + "=" + entry.getValue()).toArray(String[]::new);
 
         assertThatThrownBy(() -> {
-            try (ConfigurableApplicationContext ignored = application.run(arguments)) {
+            try (var _ = application.run(arguments)) {
                 // Llegar a este punto significa que el arranque inválido fue aceptado.
             }
         }).isInstanceOf(RuntimeException.class);
