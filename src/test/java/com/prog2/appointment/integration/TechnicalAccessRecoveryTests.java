@@ -153,9 +153,10 @@ class TechnicalAccessRecoveryTests {
         try (var harness = new Harness(_ -> {
             attempts.incrementAndGet();
             return AcquisitionResult.failed(null, AccessFailure.TEMPORARY_UNAVAILABLE);
-        }, duration -> {
+        }, _ -> {
             sleeping.countDown();
-            Thread.sleep(duration);
+            // Solo el cierre debe liberar esta espera, mediante la interrupción del ejecutor.
+            new CountDownLatch(1).await();
         })) {
             harness.recovery.requestRecovery();
             assertThat(sleeping.await(5, TimeUnit.SECONDS)).isTrue();

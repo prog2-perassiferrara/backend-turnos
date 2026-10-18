@@ -73,10 +73,10 @@ class TechnicalAccessHttpTests {
             assertThat(PROVIDERS.catalogCalls).hasValue(1);
             assertThat(PROVIDERS.centralCalls).hasValue(1);
             assertThat(PROVIDERS.serviceValidationFailure.get()).isNull();
-            assertThat(PROVIDERS.centralBearer.get().equals("Bearer " + PROVIDERS.centralToken)).isTrue();
-            assertThat(PROVIDERS.catalogBearer.get().equals(PROVIDERS.centralBearer.get())).isFalse();
+            assertThat(PROVIDERS.centralBearer.get()).isEqualTo("Bearer " + PROVIDERS.centralToken);
+            assertThat(PROVIDERS.catalogBearer.get()).isNotEqualTo(PROVIDERS.centralBearer.get());
             PROVIDERS.catalogStatus.set(503);
-            assertThat(access.getAccess().token().value().equals(PROVIDERS.centralToken)).isTrue();
+            assertThat(access.getAccess().token().value()).isEqualTo(PROVIDERS.centralToken);
             assertThat(PROVIDERS.catalogCalls).hasValue(1);
             assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
         }
@@ -91,7 +91,7 @@ class TechnicalAccessHttpTests {
                 new ServiceTokenIssuer(PROVIDERS.privateKey(), Clock.offset(clock, Duration.ofMinutes(6))));
         later.fetchToken();
         assertThat(PROVIDERS.serviceValidationFailure.get()).isNull();
-        assertThat(first.equals(PROVIDERS.catalogBearer.get())).isFalse();
+        assertThat(first).isNotEqualTo(PROVIDERS.catalogBearer.get());
         assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
     }
 

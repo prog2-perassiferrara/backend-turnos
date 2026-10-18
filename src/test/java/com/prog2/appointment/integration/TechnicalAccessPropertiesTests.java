@@ -39,7 +39,7 @@ class TechnicalAccessPropertiesTests {
                     assertThat(context).hasNotFailed();
                     var properties = context.getBean(TechnicalAccessProperties.class);
                     assertThat(properties.expectedGroup()).isEqualTo(TestIntegrationSupport.GROUP);
-                    assertThat(properties.toString()).isEqualTo("TechnicalAccessProperties[REDACTED]");
+                    assertThat(properties).hasToString("TechnicalAccessProperties[REDACTED]");
                 });
     }
 
