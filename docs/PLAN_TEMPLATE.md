@@ -11,7 +11,7 @@ derivar TASKS.md con tareas, dependencias y comprobaciones.
 -->
 
 <!-- PARA EL AGENTE
-- Lee la SPEC.md aprobada, las instrucciones del proyecto y MOBILE_GUIDELINES.md.
+- Lee la SPEC.md aprobada, las instrucciones del proyecto y los contratos pertinentes.
   Si falta un documento necesario o la spec no está aprobada, indícalo antes de avanzar.
 - Inspecciona el repositorio. Referencia rutas verificadas y distingue las nuevas propuestas.
 - Propón una solución proporcional al alcance y coherente con el proyecto.
@@ -24,6 +24,8 @@ derivar TASKS.md con tareas, dependencias y comprobaciones.
 - Conserva estos comentarios. No implementes durante la planificación.
 - Solicita aprobación antes de marcar el plan como Aprobado. La autorización
   para implementar debe ser explícita; no se deduce del estado de los documentos.
+- Para cambios de significado posteriores a la aprobación, registra una nota
+  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
 -->
 
 ## Contexto técnico verificado
@@ -39,7 +41,8 @@ derivar TASKS.md con tareas, dependencias y comprobaciones.
 ## Solución propuesta
 
 <!-- Explica el enfoque y sus motivos. Describe las responsabilidades y el
-recorrido de datos y eventos hasta la interfaz. Usa un diagrama si aporta claridad. -->
+recorrido desde la solicitud, evento o arranque hasta el resultado del servicio.
+Usa un diagrama si aporta claridad. -->
 
 [PENDIENTE]
 
@@ -68,7 +71,7 @@ Señala impacto sobre modelos, contratos o componentes compartidos. -->
 
 - **Modelos y contratos de entrada y salida:** [PENDIENTE]
 - **Identificadores, relaciones y restricciones:** [PENDIENTE]
-- **Origen de los datos mostrados y transformaciones:** [PENDIENTE]
+- **Origen de los datos consultados y transformaciones:** [PENDIENTE]
 - **Persistencia, consultas y actualizaciones:** [PENDIENTE]
 - **Convivencia entre datos locales y remotos:** [PENDIENTE]
 - **Compatibilidad y migraciones de datos existentes:** [PENDIENTE]
@@ -76,13 +79,13 @@ Señala impacto sobre modelos, contratos o componentes compartidos. -->
 ## Estado, operaciones y errores
 
 <!-- Cómo se implementan los comportamientos aprobados en la spec.
-Referencia RF/CA y aplica las consideraciones relevantes de MOBILE_GUIDELINES.md. -->
+Referencia RF/CA y completa solo los puntos pertinentes al backend. -->
 
-- **Gestión del estado de interfaz y navegación:** [PENDIENTE]
+- **Estado del servicio y de las operaciones:** [PENDIENTE]
 - **Conservación y restauración del estado:** [PENDIENTE]
 - **Ejecución, concurrencia y cancelación de operaciones:** [PENDIENTE]
 - **Errores, reintentos y prevención de duplicados:** [PENDIENTE]
-- **Otras consideraciones mobile aplicables y su solución:** [PENDIENTE]
+- **Observabilidad y diagnósticos seguros:** [PENDIENTE]
 
 ## Dependencias y configuración
 
@@ -94,7 +97,7 @@ con el proyecto y justifica las incorporaciones. No agregues dependencias por de
 ## Estrategia de validación
 
 <!-- Una fila por criterio de la spec. Selecciona el método capaz de demostrarlo:
-test unitario, integración, UI o prueba manual. No todos requieren todos los métodos.
+test unitario, integración, contrato o prueba manual. No todos requieren todos los métodos.
 Identifica tests existentes y separa los nuevos propuestos. Incluye regresiones relevantes.
 Una captura aislada no demuestra persistencia ni ausencia de peticiones de red. -->
 
@@ -107,13 +110,15 @@ Una captura aislada no demuestra persistencia ni ausencia de peticiones de red. 
 
 **Comandos verificados para compilar y ejecutar tests:** [PENDIENTE]
 
-**Pruebas en dispositivo, emulador o simulador:** [escenarios y entorno adecuado; indicar cuándo hace falta hardware real]
+**Pruebas operativas del backend:** [JAR, Compose o integración real cuando aporten evidencia necesaria; indicar límites]
 
 **Limitaciones del entorno:** [qué no podrá comprobarse aquí y cómo quedará pendiente]
 
 <!-- Esta sección planifica la validación. Durante la implementación, registra
 en TASKS.md o en el informe de validación acordado los resultados y evidencias
-reales. Distingue pruebas ejecutadas, fallidas, no ejecutadas y bloqueadas.
+reales. Usar el cierre de TASKS.md definido en AGENTS.md: CA/evidencia,
+regresión y desviaciones del PLAN. Distingue pruebas ejecutadas, fallidas,
+no ejecutadas y bloqueadas.
 Compilar o tener tests en verde no sustituye revisar los criterios de la spec. -->
 
 ## Orden de implementación
@@ -138,6 +143,8 @@ Comprueba que el plan cubre los requisitos, respeta las exclusiones, reutiliza
 componentes verificados y permite demostrar todos los criterios de aceptación.
 Resuelve dudas y marcadores pendientes. Si la spec cambió, revisa su impacto.
 Tras aprobar el plan, deriva TASKS.md con IDs, dependencias, referencias a RF/CA
-y comprobaciones. No marques una tarea terminada sin realizar su validación;
+y comprobaciones. Antes de implementar, realizar el chequeo de coherencia de
+AGENTS.md con esos documentos, sin otro informe ni aprobación adicional.
+No marques una tarea terminada sin realizar su validación;
 si está bloqueada, registra el motivo.
 -->
