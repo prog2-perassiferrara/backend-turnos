@@ -9,8 +9,8 @@ Detalle completo en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 
 Base técnica con Java 25, Spring Boot 4.1.1, Maven Wrapper 3.10.0,
 MySQL 8.4.8, JPA/Hibernate y Flyway. Incluye acceso técnico a cátedra mediante
-el contrato protegido de Catálogo, health y pruebas de integración.
-Registro/login de usuarios, protección de APIs propias y reservas se desarrollan en sus issues.
+el contrato protegido de Catálogo, registro/login de usuarios, health y pruebas de integración.
+La protección transversal de APIs propias y las reservas conservan sus issues.
 
 ## Requisitos
 
@@ -123,6 +123,13 @@ El volumen `appointment-mysql-data` conserva datos al detener o recrear contened
 Eliminarlo borra esos datos. Cambiar contraseñas en `.env` no modifica las cuentas
 de una base ya inicializada; deben actualizarse en MySQL.
 
+Flyway usa una conexión propia con espera de lectura de hasta 60 segundos por
+operación; las consultas de la aplicación conservan 10 segundos y ambas conexiones
+mantienen 5 segundos para conectar, sin reintentos de conexión de Flyway. Un timeout
+durante DDL de MySQL puede dejar tablas creadas sin una migración confirmada:
+inspeccionar el esquema y el historial antes de reintentar. No borrar datos ni
+marcar la migración como aplicada automáticamente.
+
 ## Ejecutar desde el IDE o con Maven
 
 ```bash
@@ -189,6 +196,64 @@ El puerto interno `TechnicalAccessUseCase` permite consultar acceso y comunicar
 rechazos. No se agrega en #4 un endpoint HTTP de diagnóstico, login ni reservas.
 El health sigue siendo técnico y no debe usarse para afirmar disponibilidad funcional.
 
+## Registro y autenticación de usuarios
+
+Turnos es propietario de las cuentas de KMP; no las registra en cátedra ni las
+duplica en Catálogo. Estas dos operaciones son públicas y utilizan exclusivamente
+la base propia. Su funcionamiento no depende de la disponibilidad de los
+proveedores externos, aunque la configuración local del servicio siga siendo obligatoria.
+
+| Operación | Entrada JSON | Resultado |
+| --- | --- | --- |
+| `POST /api/register` | `login`, `password`, `firstName`, `lastName`, `email`; `imageUrl` y `langKey` opcionales. | `201` sin cuerpo/JWT, después de confirmar la cuenta activa. |
+| `POST /api/authenticate` | `username` (login o email), `password` y `rememberMe` opcional, falso por defecto. | `200` con `{"id_token":"..."}` y cabecera `Authorization: Bearer ...`. |
+
+Tras recibir el 201, KMP ejecuta automáticamente authenticate con las mismas
+credenciales, sin otra acción de la persona. Si el login posterior falla, la cuenta
+permanece activa y se puede volver a iniciar sesión. Una respuesta perdida del
+registro no demuestra que no hubo alta: no repetirlo automáticamente ni tratar
+un error de duplicado como autenticación.
+
+Reglas de entrada:
+
+- Login de 1 a 50 caracteres, con el patrón del ejemplo oficial JHipster.
+- Contraseña de al menos 6 caracteres y hasta **72 bytes UTF-8**, en ambos endpoints.
+  Las letras acentuadas y emojis pueden ocupar varios bytes. El exceso se rechaza;
+  no se trunca, recorta ni normaliza la contraseña.
+- Nombre y apellido obligatorios, no blancos, hasta 50 caracteres; email válido
+  obligatorio de 5 a 254.
+- Imagen opcional hasta 256 caracteres; no incorpora carga de archivos. Idioma
+  de 2 a 10 caracteres, `es` si se omite.
+- Login/email únicos sin distinguir mayúsculas, incluidos cruces entre cuentas:
+  el login de una no puede ser el email de otra. Dentro de la misma cuenta sí
+  pueden coincidir. MySQL garantiza la regla también en altas concurrentes.
+
+Identidad, activación, autoridades y auditoría las asigna Turnos. Campos internos
+enviados por el cliente se ignoran; el alta solo concede `ROLE_USER`. BCrypt de
+Spring Security protege la contraseña con sal aleatoria y costo 10.
+
+El JWT final usa RS256 y la privada externa existente, `iss=backend-turnos`,
+`sub` igual al ID estable de cuenta, audiencias `catalog`/`turnos`,
+`token_use=user` y `auth=ROLE_USER`. Dura 24 horas, o 30 días con `rememberMe=true`,
+desde la emisión. No hay renovación automática ni extensión por actividad.
+Catálogo valida la pública correspondiente; este JWT no habilita la entrega
+de credenciales técnicas. Nunca se entrega a KMP un JWT de servicio o cátedra.
+
+| Estado y código del error | Significado |
+| --- | --- |
+| `400 VALIDATION_ERROR` | Entrada inválida, JSON mal formado o contraseña fuera del límite. |
+| `400 USER_IDENTIFIER_ALREADY_USED` | Login/email reclamado por otra cuenta, también en un cruce. |
+| `401 INVALID_CREDENTIALS` | Credenciales incorrectas, cuenta inexistente o no habilitada. |
+| `503 USER_REGISTRATION_UNAVAILABLE` | No se pudo confirmar el resultado del alta; no afirma rollback. |
+| `503 AUTHENTICATION_UNAVAILABLE` | No se pudo comprobar la cuenta/contraseña o emitir el JWT. |
+| `500 INTERNAL_ERROR` | Fallo inesperado con respuesta genérica sin información interna. |
+
+Los errores usan `application/problem+json`, con `status`, `title`, `code` e
+`instance`; validación añade nombres/códigos de campos, nunca valores rechazados.
+Respuestas con `Cache-Control: no-store`, sin cookies ni sesiones HTTP.
+No registrar cuerpos de estas solicitudes, hashes ni cabeceras bearer.
+Estas operaciones no agregan `/api/account`, administración ni recuperación de contraseña.
+
 ## Compilar y verificar
 
 ```bash
@@ -198,9 +263,12 @@ El health sigue siendo técnico y no debe usarse para afirmar disponibilidad fun
 Compila, ejecuta pruebas y empaqueta `target/appointment-0.0.1-SNAPSHOT.jar`.
 Testcontainers administra un MySQL 8.4.8 temporal: Docker debe estar accesible.
 Las pruebas no usan `.env`, la base de desarrollo ni servicios reales de cátedra/Catálogo.
-Comprueban SQL exclusivo de test e historial Flyway, health HTTP sin detalles,
+Comprueban la migración productiva de usuarios y la sonda SQL exclusiva de test,
+el historial Flyway, health HTTP sin detalles,
 configuración inválida/base inaccesible y el acceso técnico con proveedores HTTP
 ficticios, firmas RSA efímeras, relojes controlados y barreras de concurrencia.
+También verifican registro/login, límites UTF-8, campos internos manipulados,
+unicidad cruzada concurrente, commit incierto y persistencia al recrear el contexto.
 No requieren una privada personal, `.env`, Kafka ni Catálogo/cátedra reales.
 Reportes de pruebas en `target/surefire-reports/`. JaCoCo mide la cobertura de
 las pruebas y genera `target/site/jacoco/jacoco.xml` e `index.html` durante `verify`.
@@ -262,10 +330,16 @@ y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 - Clientes HTTP de `integration/infrastructure/client/adapter/`: patrón Adapter para los dos contratos salientes, separados por proveedor.
 - `InMemoryTechnicalAccessAdapter`: patrón Repository, con sesión/invalidación/cierre atómicos y huellas de tokens rechazados, sin tablas.
 - `TechnicalAccessRecoveryAdapter`: coordina executor, intentos y espera entre ciclos; son mecanismos de ejecución, sin agregar un patrón de negocio.
+- `user/domain/ports/` y los dos casos de uso de `user/application/usecases/`: contratos y coordinación de alta/autenticación sin dependencias de JPA o HTTP.
+- `JpaUserAccountAdapter` y `TransactionalUserAccountStore`: Adapter/Repository y límite transaccional; el proxy confirma antes de que el adaptador devuelva el alta o traduzca un fallo.
+- `UserAccountEntity`, `JpaUserAccountRepository` y `UserAccountMapper`: persistencia propia y conversión a dominio; identificadores y autoridades son conjuntos de valores.
+- `SpringPasswordHasherAdapter`, `NimbusUserTokenIssuerAdapter` y `UserConfiguration`: hashing, firma y wiring del slice con clave/reloj externos; conservan el firmante técnico existente.
+- Los dos controladores de `user/infrastructure/web/`, DTO, mapper, validación y `UserProblemHandler`: frontera HTTP, límite UTF-8 compartido y errores sin secretos. DTO y entidades permanecen separados.
 
 Flyway es el único responsable de cambiar el esquema; Hibernate usa `ddl-auto=validate`.
-No hay entidades ni migraciones de negocio. Las futuras migraciones SQL irán en
-`src/main/resources/db/migration/`; no editar una migración ya aplicada.
+`V2__create_users.sql` crea cuentas, identificadores y autoridades en
+`src/main/resources/db/migration/`. V1 es una sonda exclusiva de pruebas;
+no se empaqueta en producción. No editar una migración ya aplicada.
 
 El paquete base es `com.prog2.appointment`. Las funcionalidades futuras respetarán
 dominio, aplicación e infraestructura según la estructura acordada; no se generan slices vacíos.
@@ -279,3 +353,6 @@ y [casos de uso](docs/use-cases/README.md).
 Integración técnica: [SPEC](docs/features/integracion-tecnica/SPEC.md),
 [PLAN](docs/features/integracion-tecnica/PLAN.md) y [TASKS](docs/features/integracion-tecnica/TASKS.md),
 con evidencia local, entre servicios y remota diferenciadas.
+
+Registro/autenticación: [SPEC](docs/features/registro-autenticacion/SPEC.md),
+[PLAN](docs/features/registro-autenticacion/PLAN.md) y [TASKS](docs/features/registro-autenticacion/TASKS.md).
