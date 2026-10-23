@@ -116,11 +116,11 @@ class UserHttpTests {
         assertThat(response.body()).isEmpty();
         assertNoSessionAndNoCache(response);
         var row = jdbc.queryForMap("SELECT * FROM app_user");
-        assertThat(row.get("login")).isEqualTo("patient");
-        assertThat(row.get("email")).isEqualTo("patient@example.test");
-        assertThat(row.get("lang_key")).isEqualTo("es");
+        assertThat(row).containsEntry("login", "patient")
+                .containsEntry("email", "patient@example.test")
+                .containsEntry("lang_key", "es")
+                .containsEntry("activated", true);
         assertThat(row.get("image_url")).isNull();
-        assertThat(row.get("activated")).isEqualTo(true);
         assertThat(row.get("created_at")).isNotNull();
         assertThat(row.get("last_modified_at")).isNotNull();
         String hash = row.get("password_hash").toString();
@@ -148,6 +148,13 @@ class UserHttpTests {
         return Stream.of(
                 Arguments.of("login", ""), Arguments.of("login", "x".repeat(51)),
                 Arguments.of("login", "bad login"), Arguments.of("login", "user/name"),
+                Arguments.of("login", "prefix patient+tag@example.test"),
+                Arguments.of("login", "patient+tag@example.test suffix"),
+                Arguments.of("login", "patient+tag@sub..example.test"),
+                Arguments.of("login", "patient+tag@sub.example.test."),
+                Arguments.of("login", "patient+tag@.example.test"),
+                Arguments.of("login", "patient+tag@"), Arguments.of("login", "patient+tag"),
+                Arguments.of("login", "patient\n"),
                 Arguments.of("password", null), Arguments.of("password", "short"),
                 Arguments.of("password", "x".repeat(73)), Arguments.of("password", "á".repeat(37)),
                 Arguments.of("password", "🙂".repeat(19)),
@@ -200,6 +207,16 @@ class UserHttpTests {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"patient.name-1_2", "patient+tag@sub.example.test",
+            "a!$&*+=?^_`{|}~.-@sub.example.test", "x+y@localhost"})
+    void retainsCompatibleLoginFormatsWhenRegisteringAndAuthenticating(String login)
+            throws IOException, InterruptedException {
+        assertThat(register(profile(login, "patient@example.test")).statusCode()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT login FROM app_user", String.class)).isEqualTo(login);
+        assertThat(authenticate(login, PASSWORD, null).statusCode()).isEqualTo(200);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"LOGIN@example.test,free@example.test", "free,EMAIL@example.test",
             "EMAIL@example.test,free@example.test", "free,LOGIN@example.test"})
     void rejectsDuplicatesAndBothCrossIdentifierDirections(String pair) throws IOException, InterruptedException {
@@ -224,7 +241,7 @@ class UserHttpTests {
     @ValueSource(booleans = {false, true})
     @Timeout(30)
     void concurrentRegistrationsCannotClaimSameOrCrossedIdentifier(boolean crossed)
-            throws IOException, InterruptedException, java.util.concurrent.ExecutionException,
+            throws InterruptedException, java.util.concurrent.ExecutionException,
             java.util.concurrent.TimeoutException {
         var first = profile(crossed ? "shared@example.test" : "shared", "one@example.test");
         var second = profile(crossed ? "another" : "SHARED",

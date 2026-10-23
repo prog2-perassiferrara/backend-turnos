@@ -48,7 +48,8 @@ class PasswordHasherTests {
 
     @Test
     void rejectsOversizedUnicodeAndTooShortInputs() {
-        assertThatThrownBy(() -> passwords.encode("á".repeat(37))).isInstanceOf(UserSecurityException.class);
+        String oversizedPassword = "á".repeat(37);
+        assertThatThrownBy(() -> passwords.encode(oversizedPassword)).isInstanceOf(UserSecurityException.class);
         assertThatThrownBy(() -> passwords.encode("short")).isInstanceOf(UserSecurityException.class);
         assertThatThrownBy(() -> passwords.encode(null)).isInstanceOf(UserSecurityException.class);
     }
@@ -59,7 +60,8 @@ class PasswordHasherTests {
                 .isInstanceOf(UserSecurityException.class).hasNoCause();
         assertThatThrownBy(() -> passwords.matches("valid-password", null))
                 .isInstanceOf(UserSecurityException.class);
-        assertThatThrownBy(() -> passwords.matches("valid-password", "$2a$99$" + "a".repeat(53)))
+        String invalidCostHash = "$2a$99$" + "a".repeat(53);
+        assertThatThrownBy(() -> passwords.matches("valid-password", invalidCostHash))
                 .isInstanceOf(UserSecurityException.class);
     }
 }

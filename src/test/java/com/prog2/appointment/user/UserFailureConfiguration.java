@@ -8,10 +8,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Role;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 import com.prog2.appointment.user.domain.exception.UserSecurityException;
 import com.prog2.appointment.user.domain.ports.out.UserTokenIssuer;
@@ -33,7 +35,9 @@ public class UserFailureConfiguration {
         }
     }
 
+    /** Estado de infraestructura necesario durante el registro del posprocesador de fallos. */
     @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     static Faults userFaults() {
         return new Faults();
     }

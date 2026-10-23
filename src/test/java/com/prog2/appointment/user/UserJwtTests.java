@@ -63,7 +63,9 @@ class UserJwtTests {
         var issuer = new NimbusUserTokenIssuerAdapter(_ -> {
             throw new JwtEncodingException("fictional-sensitive-encoder-message");
         }, Clock.fixed(NOW, ZoneOffset.UTC));
-        assertThatThrownBy(() -> issuer.issue(1, Set.of("ROLE_USER"), Duration.ofHours(24)))
+        var roles = Set.of("ROLE_USER");
+        var lifetime = Duration.ofHours(24);
+        assertThatThrownBy(() -> issuer.issue(1, roles, lifetime))
                 .isInstanceOf(UserSecurityException.class).hasNoCause()
                 .hasMessageNotContaining("fictional-sensitive");
     }
@@ -88,8 +90,9 @@ class UserJwtTests {
         timestamps.setClock(Clock.fixed(token.expiresAt().plusSeconds(29), ZoneOffset.UTC));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps,
                 new JwtIssuerValidator("backend-turnos"), new JwtAudienceValidator("catalog")));
-        assertThat(decoder.decode(token.value()).getSubject()).isEqualTo("42");
+        String encodedToken = token.value();
+        assertThat(decoder.decode(encodedToken).getSubject()).isEqualTo("42");
         timestamps.setClock(Clock.fixed(token.expiresAt().plusSeconds(31), ZoneOffset.UTC));
-        assertThatThrownBy(() -> decoder.decode(token.value())).isInstanceOf(JwtValidationException.class);
+        assertThatThrownBy(() -> decoder.decode(encodedToken)).isInstanceOf(JwtValidationException.class);
     }
 }

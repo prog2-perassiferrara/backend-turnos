@@ -18,6 +18,9 @@ La protección transversal de APIs propias y las reservas conservan sus issues.
 - JDK 25 para ejecutar Java localmente o usar el wrapper en la máquina.
 - Acceso a Maven Central y Docker Hub en la primera ejecución.
 - No hace falta instalar Maven: el wrapper descarga la versión 3.10.0.
+- `.mvn/maven.config` evita incorporar repositorios declarados por dependencias
+  transitivas. Los artefactos utilizados se resuelven desde Maven Central, sin
+  requerir acceso a los repositorios privados declarados por Flyway.
 - En Windows, utilizar `mvnw.cmd`; ese entorno no fue validado aquí.
 
 ## Configuración local

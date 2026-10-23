@@ -209,6 +209,8 @@ Conservar los 30 s de tolerancia del validador de Catálogo; no aplicarlos a la 
 
 <!-- Propuestas acotadas; no se modificó el build. -->
 
+**Corrección autorizada tras revisión remota, 2026-10-23:** PR #21 señaló dos problemas del regex y nueve ajustes de pruebas. Se conserva el lenguaje de logins de JHipster, agrupando alternativas/anclas y haciendo posesiva la repetición final de etiquetas de dominio; validar formatos admitidos y entradas inválidas mediante HTTP/MySQL. Preparar argumentos fuera de lambdas que verifican excepciones, usar aserciones de mapa directas y retirar un `throws` innecesario. El estado de inyección de fallos se declara infraestructura de pruebas. Maven ignora repositorios introducidos por dependencias transitivas para evitar consultas a feeds privados de Flyway; sin cambios de versiones ni credenciales. No cambia RF/CA, límites ni contratos; evidencia y regresión en TASKS.
+
 - Añadir `spring-boot-starter-validation` para validación de DTO y declarar `spring-security-crypto` usado por el adaptador; versiones del BOM existente. JOSE/Nimbus, JPA/Flyway y Testcontainers ya están. BCrypt no requiere agregar Bouncy Castle; no introducir JHipster, Lombok ni bibliotecas criptográficas manuales.
 - Usar la clave PKCS8 y el reloj ya cargados por configuración raíz; no leer `.env`/PEM privados durante trabajo del agente ni copiarlos a imagen/JAR. Sin nuevos secretos ni variables para las duraciones fijas acordadas.
 - Conservar Compose individuales, red `prog2-services`, bases propias y health. HTTP solo en desarrollo local/red privada, HTTPS fuera de ese entorno según lo acordado; no instalar proxy/certificados en estos issues.
