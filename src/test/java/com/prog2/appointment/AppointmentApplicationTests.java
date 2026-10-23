@@ -5,10 +5,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Timeout;
@@ -22,6 +24,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.env.StandardEnvironment;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -72,10 +75,12 @@ class AppointmentApplicationTests {
     private int port;
 
     private final JdbcTemplate jdbc;
+    private final Flyway flyway;
 
     /** Spring entrega el acceso JDBC del contexto aislado mediante el constructor. */
-    AppointmentApplicationTests(JdbcTemplate jdbc) {
+    AppointmentApplicationTests(JdbcTemplate jdbc, Flyway flyway) {
         this.jdbc = jdbc;
+        this.flyway = flyway;
     }
 
     @Test
@@ -86,6 +91,22 @@ class AppointmentApplicationTests {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '1' AND success = 1",
                 Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @Timeout(45)
+    void allowsSlowMigrationWithoutExtendingApplicationQueryTimeout() throws java.sql.SQLException {
+        // Una espera controlada en MySQL supera los 10 s del pool normal sin depender de la velocidad del disco.
+        try (var connection = flyway.getConfiguration().getDataSource().getConnection();
+                var statement = connection.createStatement();
+                var result = statement.executeQuery("SELECT SLEEP(11)")) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getInt(1)).isZero();
+        }
+
+        assertThatThrownBy(() -> jdbc.queryForObject("SELECT SLEEP(11)", Integer.class))
+                .isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(SocketTimeoutException.class);
     }
 
     @Test
