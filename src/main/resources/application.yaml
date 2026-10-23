@@ -18,6 +18,10 @@ spring:
   flyway:
     enabled: true
     connect-retries: 0
+    # El DDL puede tardar más que una consulta; no ampliar el límite del pool de aplicación.
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME}?connectTimeout=5000&socketTimeout=60000
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
 
 server:
   port: ${APP_PORT:8081}

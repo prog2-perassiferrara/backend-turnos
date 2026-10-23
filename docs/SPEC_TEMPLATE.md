@@ -4,24 +4,27 @@
 
 <!-- PARA LA PERSONA
 Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo usando MOBILE_GUIDELINES.md.
+Pide al agente que la complete contigo según el enunciado y los contratos del backend.
 SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
 TASKS.md organiza los pasos de ejecución.
 -->
 
 <!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto y MOBILE_GUIDELINES.md. Inspecciona el
-  repositorio para comprobar el comportamiento actual. Si falta la guía, pide su ubicación.
+- Lee las instrucciones del proyecto y los contratos pertinentes. Inspecciona el
+  repositorio para comprobar el comportamiento actual.
 - Completa esta spec con la persona: investiga lo comprobable y consulta las
   decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
 - No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
   confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Aplica las consideraciones mobile relevantes sin ampliar el alcance automáticamente.
+- Considera errores, concurrencia, integración y recuperación cuando apliquen,
+  sin ampliar el alcance automáticamente.
 - No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
   esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
 - Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
 - Un documento completo no está aprobado automáticamente. Solicita aprobación
   antes de marcarlo como Aprobada. No implementes durante esta etapa.
+- Para cambios de significado posteriores a la aprobación, registra una nota
+  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
 -->
 
 ## Qué construimos y para quién
@@ -53,10 +56,10 @@ adicionales, indícalo tras revisarlo con la persona. -->
 
 - [PENDIENTE]
 
-## Flujo de usuario
+## Flujo del caso de uso
 
-<!-- Cómo se inicia, qué hace el usuario y qué resultado obtiene.
-Incluye pantallas afectadas, navegación y alternativas relevantes. -->
+<!-- Qué usuario, servicio, evento o arranque lo inicia, qué hace el backend
+y qué resultado obtiene el actor. Incluye alternativas relevantes. -->
 
 1. [PENDIENTE]
 2. [PENDIENTE]
@@ -64,38 +67,34 @@ Incluye pantallas afectadas, navegación y alternativas relevantes. -->
 
 ## Datos y reglas de negocio
 
-<!-- Información que necesita el usuario, campos obligatorios, validaciones,
-límites y reglas como duplicados u orden de presentación. Describe significado
+<!-- Información que recibe o devuelve el servicio, campos obligatorios, validaciones,
+límites y reglas como duplicados u orden de procesamiento. Describe significado
 y comportamiento, sin diseñar tablas, DTO, DAO ni almacenamiento. -->
 
 - [PENDIENTE]
 
-## Comportamiento mobile y casos alternativos
+## Comportamiento del backend y casos alternativos
 
-<!-- Adapta la tabla usando MOBILE_GUIDELINES.md. Añade escenarios relevantes.
-Marca No aplica con su motivo cuando corresponda. No presupongas soporte offline
-ni conservación de todo el estado. Expresa resultados, no mecanismos técnicos. -->
+<!-- Filas orientativas: conserva las pertinentes y añade las necesarias para
+esta funcionalidad. No inventes soporte offline, persistencia ni recuperación.
+Expresa resultados observables, no mecanismos técnicos. -->
 
 | Situación | Comportamiento esperado |
 | --- | --- |
-| Carga o acción en curso | [PENDIENTE] |
+| Operación en curso | [PENDIENTE] |
 | Sin datos | [PENDIENTE] |
 | Entrada inválida | [PENDIENTE] |
 | Error o espera excesiva | [PENDIENTE] |
-| Sin conexión o conexión interrumpida | [PENDIENTE] |
-| Cancelar o volver atrás | [PENDIENTE] |
-| Pasar a segundo plano y regresar | [PENDIENTE] |
-| Recrear la pantalla | [PENDIENTE] |
-| Reabrir después de terminarse el proceso | [PENDIENTE] |
-| Otros puntos aplicables de la guía | [PENDIENTE] |
-
-**Puntos de la guía no aplicables y motivo:** [PENDIENTE]
+| Acceso no autorizado | [PENDIENTE] |
+| Dependencia no disponible o conexión interrumpida | [PENDIENTE] |
+| Solicitudes o eventos concurrentes/duplicados | [PENDIENTE] |
+| Reinicio o interrupción durante una operación | [PENDIENTE] |
 
 ## Restricciones del pedido
 
 <!-- Condiciones ya impuestas: compatibilidad, límites de alcance, requisitos
-de accesibilidad o rendimiento medibles, o una tecnología expresamente exigida.
-Ejemplo: Usar Room puede ser una restricción; el diseño de entidades va en PLAN.md.
+de rendimiento medibles, o una tecnología expresamente exigida.
+Ejemplo: conservar un contrato HTTP; el diseño de controladores va en PLAN.md.
 No conviertas una preferencia del agente en una restricción. -->
 
 - [PENDIENTE]
@@ -128,7 +127,7 @@ no queden pendientes funcionales ni restricciones por decidir. -->
 - [PENDIENTE]
 
 <!-- ANTES DE SOLICITAR APROBACIÓN
-Comprueba que el alcance está acordado, los flujos son coherentes, los puntos
-mobile relevantes están cubiertos y cada requisito tiene criterios comprobables.
+Comprueba que el alcance está acordado, los flujos son coherentes y todo RF tiene CA
+comprobables, incluidos los casos alternativos pertinentes.
 Resuelve las dudas y los marcadores pendientes. Mantén el diseño técnico en PLAN.md.
 -->
