@@ -16,6 +16,7 @@
     <description>Backend de turnos y reservas</description>
     <properties>
         <java.version>25</java.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
         <jacoco.version>0.8.15</jacoco.version>
         <sonar-maven-plugin.version>5.8.0.7211</sonar-maven-plugin.version>
         <!-- Identificadores públicos; SONAR_TOKEN se suministra solo por entorno. -->
@@ -38,6 +39,11 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

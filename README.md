@@ -220,9 +220,9 @@ un error de duplicado como autenticación.
 Reglas de entrada:
 
 - Login de 1 a 50 caracteres, con el patrón del ejemplo oficial JHipster.
-- Contraseña de al menos 6 caracteres y hasta **72 bytes UTF-8**, en ambos endpoints.
-  Las letras acentuadas y emojis pueden ocupar varios bytes. El exceso se rechaza;
-  no se trunca, recorta ni normaliza la contraseña.
+- Contraseña de **6 a 100 puntos de código Unicode**, incluidos espacios, en ambos
+  endpoints. Un carácter suplementario cuenta una vez, aunque ocupe dos unidades
+  UTF-16 o varios bytes. El exceso se rechaza; no se trunca, recorta ni normaliza.
 - Nombre y apellido obligatorios, no blancos, hasta 50 caracteres; email válido
   obligatorio de 5 a 254.
 - Imagen opcional hasta 256 caracteres; no incorpora carga de archivos. Idioma
@@ -232,8 +232,14 @@ Reglas de entrada:
   pueden coincidir. MySQL garantiza la regla también en altas concurrentes.
 
 Identidad, activación, autoridades y auditoría las asigna Turnos. Campos internos
-enviados por el cliente se ignoran; el alta solo concede `ROLE_USER`. BCrypt de
-Spring Security protege la contraseña con sal aleatoria y costo 10.
+enviados por el cliente se ignoran; el alta solo concede `ROLE_USER`. Argon2id de
+Spring Security protege la contraseña con sal aleatoria de 16 bytes, salida de
+32 bytes, memoria de 19456 KiB (19 MiB), dos iteraciones y paralelismo 1. Requiere
+`bcprov-jdk18on:1.86`; usa formato nativo Argon2id v19 de 97 caracteres, que cabe
+en la columna existente. Se comprueba ese perfil antes de verificar el hash;
+un valor corrupto o de otro perfil se informa como fallo técnico sin exponerlo.
+
+### JWT de usuario y errores
 
 El JWT final usa RS256 y la privada externa existente, `iss=backend-turnos`,
 `sub` igual al ID estable de cuenta, audiencias `catalog`/`turnos`,
@@ -270,7 +276,7 @@ Comprueban la migración productiva de usuarios y la sonda SQL exclusiva de test
 el historial Flyway, health HTTP sin detalles,
 configuración inválida/base inaccesible y el acceso técnico con proveedores HTTP
 ficticios, firmas RSA efímeras, relojes controlados y barreras de concurrencia.
-También verifican registro/login, límites UTF-8, campos internos manipulados,
+También verifican registro/login, límites por puntos de código Unicode, campos internos manipulados,
 unicidad cruzada concurrente, commit incierto y persistencia al recrear el contexto.
 No requieren una privada personal, `.env`, Kafka ni Catálogo/cátedra reales.
 Reportes de pruebas en `target/surefire-reports/`. JaCoCo mide la cobertura de
@@ -337,7 +343,7 @@ y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 - `JpaUserAccountAdapter` y `TransactionalUserAccountStore`: Adapter/Repository y límite transaccional; el proxy confirma antes de que el adaptador devuelva el alta o traduzca un fallo.
 - `UserAccountEntity`, `JpaUserAccountRepository` y `UserAccountMapper`: persistencia propia y conversión a dominio; identificadores y autoridades son conjuntos de valores.
 - `SpringPasswordHasherAdapter`, `NimbusUserTokenIssuerAdapter` y `UserConfiguration`: hashing, firma y wiring del slice con clave/reloj externos; conservan el firmante técnico existente.
-- Los dos controladores de `user/infrastructure/web/`, DTO, mapper, validación y `UserProblemHandler`: frontera HTTP, límite UTF-8 compartido y errores sin secretos. DTO y entidades permanecen separados.
+- Los dos controladores de `user/infrastructure/web/`, DTO, mapper, validación y `UserProblemHandler`: frontera HTTP, límite Unicode compartido mediante `PasswordLength` y errores sin secretos. DTO y entidades permanecen separados.
 
 Flyway es el único responsable de cambiar el esquema; Hibernate usa `ddl-auto=validate`.
 `V2__create_users.sql` crea cuentas, identificadores y autoridades en

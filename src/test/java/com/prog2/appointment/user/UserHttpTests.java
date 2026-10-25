@@ -124,7 +124,7 @@ class UserHttpTests {
         assertThat(row.get("created_at")).isNotNull();
         assertThat(row.get("last_modified_at")).isNotNull();
         String hash = row.get("password_hash").toString();
-        assertThat(hash).startsWith("$2a$10$").doesNotContain(PASSWORD);
+        assertThat(hash).hasSize(97).startsWith("$argon2id$v=19$m=19456,t=2,p=1$").doesNotContain(PASSWORD);
         assertThat(jdbc.queryForList("SELECT authority FROM user_authority", String.class))
                 .containsExactly("ROLE_USER");
         var login = authenticate("PATIENT", PASSWORD, null);
@@ -156,8 +156,8 @@ class UserHttpTests {
                 Arguments.of("login", "patient+tag@"), Arguments.of("login", "patient+tag"),
                 Arguments.of("login", "patient\n"),
                 Arguments.of("password", null), Arguments.of("password", "short"),
-                Arguments.of("password", "x".repeat(73)), Arguments.of("password", "á".repeat(37)),
-                Arguments.of("password", "🙂".repeat(19)),
+                Arguments.of("password", "x".repeat(101)), Arguments.of("password", "á".repeat(101)),
+                Arguments.of("password", "🙂".repeat(101)), Arguments.of("password", "🙂".repeat(5)),
                 Arguments.of("firstName", null), Arguments.of("firstName", " "),
                 Arguments.of("firstName", "x".repeat(51)), Arguments.of("lastName", null),
                 Arguments.of("lastName", " "), Arguments.of("lastName", "x".repeat(51)),
@@ -265,7 +265,8 @@ class UserHttpTests {
     }
 
     static Stream<String> validPasswordBoundaries() {
-        return Stream.of("sixsix", "x".repeat(72), "á".repeat(36), "🙂".repeat(18), "  exact password  ");
+        return Stream.of("sixsix", "x".repeat(100), "á".repeat(100), "🙂".repeat(100),
+                "🙂".repeat(6), "x".repeat(73), "  exact password  ");
     }
 
     @ParameterizedTest
@@ -328,20 +329,64 @@ class UserHttpTests {
         assertProblem(authenticate("patient", PASSWORD, null), 401, "INVALID_CREDENTIALS");
     }
 
+    static Stream<String> invalidLoginPasswords() {
+        return Stream.of(null, "short", "", "x".repeat(101), "á".repeat(101),
+                "🙂".repeat(101), "🙂".repeat(5));
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"short", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+    @MethodSource("invalidLoginPasswords")
     void rejectsInvalidLoginPasswordBeforeAuthentication(String password) throws IOException, InterruptedException {
         assertProblem(authenticate("unknown", password, null), 400, "VALIDATION_ERROR");
     }
 
     @Test
-    void rejectsSuffixBeyond72BytesInsteadOfAcceptingMatchingPrefix() throws IOException, InterruptedException {
-        String password = "á".repeat(36);
+    void rejectsSuffixBeyond100CharactersInsteadOfAcceptingMatchingPrefix() throws IOException, InterruptedException {
+        String password = "🙂".repeat(100);
         var body = profile("patient", "patient@example.test");
         body.put("password", password);
         assertThat(register(body).statusCode()).isEqualTo(201);
         assertProblem(authenticate("patient", password + "x", null), 400, "VALIDATION_ERROR");
-        assertProblem(authenticate("patient", "á".repeat(35) + "é", null), 401, "INVALID_CREDENTIALS");
+        assertProblem(authenticate("patient", "🙂".repeat(99) + "é", null), 401, "INVALID_CREDENTIALS");
+    }
+
+    @Test
+    void manualRetirementRemovesOnlyLegacyAccountsAndPreservesIdentitySequence()
+            throws IOException, InterruptedException, java.sql.SQLException {
+        assertThat(register(profile("legacy", "legacy@example.test")).statusCode()).isEqualTo(201);
+        assertThat(register(profile("current", "current@example.test")).statusCode()).isEqualTo(201);
+        Long legacyId = jdbc.queryForObject("SELECT id FROM app_user WHERE login = 'legacy'", Long.class);
+        Long currentId = jdbc.queryForObject("SELECT id FROM app_user WHERE login = 'current'", Long.class);
+        String legacyHash = "$2a$10$" + "a".repeat(53);
+        jdbc.update("UPDATE app_user SET password_hash = ? WHERE id = ?", legacyHash, legacyId);
+        assertProblem(authenticate("legacy", PASSWORD, null), 503, "AUTHENTICATION_UNAVAILABLE");
+
+        // Mismo procedimiento manual del README, ejecutado solo en el contenedor temporal.
+        try (var connection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection();
+                var statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            assertThat(statement.executeUpdate("""
+                    DELETE a FROM user_authority a JOIN app_user u ON u.id = a.user_id
+                    WHERE LEFT(u.password_hash, 4) IN ('$2a$', '$2b$', '$2y$')
+                    """)).isEqualTo(1);
+            assertThat(statement.executeUpdate("""
+                    DELETE i FROM user_identifier i JOIN app_user u ON u.id = i.user_id
+                    WHERE LEFT(u.password_hash, 4) IN ('$2a$', '$2b$', '$2y$')
+                    """)).isEqualTo(2);
+            assertThat(statement.executeUpdate("""
+                    DELETE FROM app_user WHERE LEFT(password_hash, 4) IN ('$2a$', '$2b$', '$2y$')
+                    """)).isEqualTo(1);
+            connection.commit();
+        }
+        assertThat(count("app_user")).isEqualTo(1);
+        assertThat(count("user_identifier")).isEqualTo(2);
+        assertThat(count("user_authority")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT id FROM app_user", Long.class)).isEqualTo(currentId);
+        assertProblem(authenticate("legacy", PASSWORD, null), 401, "INVALID_CREDENTIALS");
+        assertThat(authenticate("current", PASSWORD, null).statusCode()).isEqualTo(200);
+        assertThat(register(profile("legacy", "legacy@example.test")).statusCode()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT id FROM app_user WHERE login = 'legacy'", Long.class))
+                .isGreaterThan(currentId).isGreaterThan(legacyId);
     }
 
     @Test

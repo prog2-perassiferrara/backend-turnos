@@ -1,14 +1,15 @@
 package com.prog2.appointment.user.infrastructure.security;
 
-import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.prog2.appointment.user.domain.exception.UserSecurityException;
 import com.prog2.appointment.user.domain.ports.out.PasswordHasher;
 
-/** Adapter de hashing: delega la criptografía a Spring y rechaza verificaciones parciales de BCrypt. */
+/** Adapter de Argon2id: delega la criptografía a Spring y verifica el perfil persistido de esta entrega. */
 public final class SpringPasswordHasherAdapter implements PasswordHasher {
-    private static final Pattern BCRYPT = Pattern.compile("\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}");
+    // Solo el perfil emitido: evita tratar hashes corruptos como contraseña incorrecta o aceptar otro coste.
+    private static final Pattern ARGON2ID = Pattern.compile(
+            "\\$argon2id\\$v=19\\$m=19456,t=2,p=1\\$[A-Za-z0-9+/]{22}\\$[A-Za-z0-9+/]{43}");
     private final PasswordEncoder encoder;
 
     public SpringPasswordHasherAdapter(PasswordEncoder encoder) {
@@ -29,7 +30,7 @@ public final class SpringPasswordHasherAdapter implements PasswordHasher {
     public boolean matches(String password, String encodedPassword) {
         try {
             requireCompletePassword(password);
-            if (encodedPassword == null || !BCRYPT.matcher(encodedPassword).matches()) {
+            if (encodedPassword == null || !ARGON2ID.matcher(encodedPassword).matches()) {
                 throw new UserSecurityException();
             }
             return encoder.matches(password, encodedPassword);
@@ -40,8 +41,11 @@ public final class SpringPasswordHasherAdapter implements PasswordHasher {
 
     private static void requireCompletePassword(String password) {
         // El adaptador también protege invocaciones internas, fuera de Bean Validation HTTP.
-        if (password == null || password.length() < 6
-                || password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        if (password == null) {
+            throw new UserSecurityException();
+        }
+        int length = password.codePointCount(0, password.length());
+        if (length < 6 || length > 100) {
             throw new UserSecurityException();
         }
     }
