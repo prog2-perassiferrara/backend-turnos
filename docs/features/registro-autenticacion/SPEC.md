@@ -1,10 +1,12 @@
 # SPEC: Registro y autenticación de usuarios
 
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
-**Revisión:** 2026-10-23. Se conservan agrupación #6/#5, perfil obligatorio y decisiones D-01/D-02; se ajusta el máximo de contraseña con confirmación del usuario.
+**Revisión:** 2026-10-25. Se conserva la funcionalidad #6/#5 y se incorpora el ajuste de hashing y longitud de #22.
 **Aprobación:** explícita del usuario el 2026-10-20 («apruebo spec»), con el ajuste siguiente confirmado el 2026-10-23. Las aprobaciones y la autorización de implementación posteriores constan en PLAN/TASKS.
 
 **Ajuste confirmado, 2026-10-23:** el usuario acepta sustituir el máximo de 100 caracteres por 72 bytes UTF-8 para utilizar BCrypt como el ejemplo JHipster. Se conserva el mínimo de 6 caracteres y no se trunca la contraseña. Afecta RF-01/RF-03/RF-09, CA-02/CA-04 y sus validaciones/pruebas en PLAN. Al confirmar el ajuste aún no había TASKS ni implementación; la aprobación del PLAN fue posterior e independiente.
+
+**Ajuste autorizado, 2026-10-25, [#22](https://github.com/prog2-perassiferrara/backend-turnos/issues/22):** migrar el hashing a Argon2id y aplicar entre 6 y 100 caracteres Unicode (puntos de código), incluidos espacios, en registro/login. Sustituye la restricción anterior de 72 bytes, sin truncar, recortar ni normalizar. Retirar manualmente las cuentas ficticias BCrypt y sus datos asociados, sin compatibilidad ni rehash automático; no borrar datos al arrancar. Se reutilizan estos documentos y la rama existente. Impacta RF-01/RF-03/RF-09 y CA-02/CA-04; conserva el contrato HTTP/JWT. El usuario autorizó explícitamente implementar esta migración; las aprobaciones originales se conservan.
 
 <!-- PARA LA PERSONA
 SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
@@ -46,7 +48,7 @@ El issue #6 depende de #5 porque el login automático utiliza la misma autentica
 
 - **RF-01:** Recibir y validar `login`, `password`, `firstName`, `lastName`, `email`, `langKey` e `imageUrl` conforme a las reglas siguientes. Solo `imageUrl` es opcional entre los datos del perfil; `langKey` admite el valor predeterminado acordado.
 - **RF-02:** Garantizar unicidad de login y email sin distinguir mayúsculas, también ante registros concurrentes. Impedir además que el login de una cuenta coincida con el email de otra, en ambos sentidos; login y email de la misma cuenta pueden coincidir. Rechazar datos inválidos o duplicados sin cuentas parciales ni modificación de cuentas existentes.
-- **RF-03:** Crear una cuenta persistente, activa inmediatamente, con contraseña protegida mediante hashing. Turnos asigna identidad interna estable, autoridades y auditoría; el cliente no puede elegir esos campos ni obtener permisos administrativos o de integración técnica.
+- **RF-03:** Crear una cuenta persistente, activa inmediatamente, con contraseña protegida mediante Argon2id. Turnos asigna identidad interna estable, autoridades y auditoría; el cliente no puede elegir esos campos ni obtener permisos administrativos o de integración técnica.
 - **RF-04:** Después del alta efectiva, ejecutar CU-02 con las credenciales registradas sin otra acción del usuario. El éxito completo entrega un JWT de usuario compatible con la confianza acordada con Catálogo; no entrega JWT de servicio ni de cátedra.
 - **RF-05:** Si la cuenta se creó pero la autenticación posterior falla, conservarla activa e informar por separado que no se inició sesión. Permitir el login mediante CU-02 sin exigir repetir el registro; no emitir un JWT por omisión ante ese fallo.
 - **RF-06:** Resolver el registro y su autenticación con los datos propios de Turnos, independientemente de la disponibilidad de Catálogo o cátedra. Conservar las cuentas tras reinicios; no declarar éxito si no se verificó el alta.
@@ -91,12 +93,12 @@ Trazabilidad de la entrega: CU-01/#6 comprende RF-01 a RF-05; CU-02/#5, RF-09/RF
 
 <!-- Campos, significado y reglas observables; sin diseñar clases, tablas ni algoritmos. -->
 
-Las reglas siguientes parten de la base de compatibilidad confirmada por el usuario el 2026-10-18, con el ajuste de contraseña del 2026-10-23 indicado arriba. El enunciado enumera los campos, pero no contiene estos límites numéricos; la sección 5.1 del anexo regula la cuenta técnica y no los prescribe para usuarios finales.
+Las reglas siguientes parten de la base de compatibilidad confirmada por el usuario el 2026-10-18, con los ajustes de contraseña indicados arriba. El enunciado enumera los campos, pero no contiene estos límites numéricos; la sección 5.1 del anexo regula la cuenta técnica y no los prescribe para usuarios finales.
 
 | Campo | Regla acordada |
 | --- | --- |
 | `login` | Obligatorio, de 1 a 50 caracteres, patrón de login del ejemplo oficial JHipster. Único sin distinguir mayúsculas. |
-| `password` | Obligatoria, mínimo 6 caracteres y máximo 72 bytes al codificarla en UTF-8, tanto en registro como en login. Los caracteres multibyte reducen la cantidad que cabe en ese máximo. Rechazar el exceso sin truncar, recortar ni normalizar su valor. Nunca conservarla en texto plano. |
+| `password` | Obligatoria, entre 6 y 100 puntos de código Unicode, incluidos espacios, tanto en registro como en login. Un emoji fuera del plano básico cuenta como un carácter; no se cuentan unidades UTF-16 ni bytes. Rechazar el exceso sin truncar, recortar ni normalizar su valor. Nunca conservarla en texto plano. |
 | `firstName`, `lastName` | Obligatorios, no vacíos ni compuestos solo por espacios; máximo 50 caracteres cada uno. |
 | `email` | Obligatorio, válido, de 5 a 254 caracteres. Único sin distinguir mayúsculas. |
 | `imageUrl` | Opcional; máximo 256 caracteres si se informa. No requiere incorporar carga ni alojamiento de imágenes. |
@@ -149,7 +151,7 @@ La elaboración de esta SPEC fue una etapa documental. Su aprobación, la del PL
 <!-- Resultados observables; no se declaran comprobados durante la especificación. -->
 
 - **CA-01 · RF-01, RF-03, RF-04:** Un registro válido crea una cuenta activa y entrega un JWT final sin otra acción del usuario ni verificación por correo.
-- **CA-02 · RF-01, RF-09:** Los límites de campos y obligatoriedad se respetan; ausencia de `imageUrl` se admite y omitir `langKey` produce `es`. Registro y login rechazan contraseñas con menos de 6 caracteres o más de 72 bytes UTF-8, sin truncarlas. Una entrada inválida no crea cuenta ni emite JWT.
+- **CA-02 · RF-01, RF-09:** Los límites de campos y obligatoriedad se respetan; ausencia de `imageUrl` se admite y omitir `langKey` produce `es`. Registro y login rechazan contraseñas con menos de 6 o más de 100 puntos de código Unicode, sin truncarlas. Una entrada inválida no crea cuenta ni emite JWT.
 - **CA-03 · RF-02:** Login/email existentes se rechazan también con cambios de mayúsculas, al igual que las coincidencias cruzadas entre cuentas. Login/email iguales en la misma cuenta se admiten si cumplen sus validaciones. Solicitudes concurrentes no generan duplicados ni identidades ambiguas, ni alteran cuentas existentes.
 - **CA-04 · RF-03, RF-08:** La cuenta confirmada conserva únicamente una representación protegida de la contraseña, verificable contra su valor completo sin truncarlo. Ninguna respuesta/log expone contraseña, hash, privadas o credenciales técnicas; la respuesta de autenticación entrega únicamente el token de usuario y los datos que su contrato permita.
 - **CA-05 · RF-03, RF-08:** Enviar identidad, activación, autoridades o auditoría no permite elegirlos ni elevar permisos. La cuenta registrada queda activa con permisos comunes controlados por Turnos.
@@ -168,7 +170,7 @@ La elaboración de esta SPEC fue una etapa documental. Su aprobación, la del PL
 | Criterio | Condiciones y pasos | Resultado esperado |
 | --- | --- | --- |
 | CA-01 | Registrar datos válidos y completar el flujo incluido de autenticación. | Cuenta activa y sesión iniciada sin acción adicional. |
-| CA-02 | Variar campos ausentes, blancos, formatos y límites; omitir imagen/idioma. En registro/login, probar mínimo de caracteres y frontera de 72 bytes UTF-8 con texto ASCII y multibyte. | Rechazos sin alta parcial ni JWT ante entrada inválida, sin truncamiento; imagen opcional y `es` predeterminado. |
+| CA-02 | Variar campos ausentes, blancos, formatos y límites; omitir imagen/idioma. En registro/login, probar 5/6/100/101 puntos de código con ASCII, acentos y emojis. | Rechazos sin alta parcial ni JWT ante entrada inválida, sin truncamiento; imagen opcional y `es` predeterminado. |
 | CA-03 | Repetir login/email con distinta capitalización; cruzar el login de una cuenta y el email de otra, también simultáneamente; usar el mismo login/email en una cuenta. | Sin duplicados ni ambigüedades entre cuentas; coincidencia propia admitida si es válida. |
 | CA-04 | Registrar/verificar credenciales e inspeccionar representación guardada y salidas; alterar el final de una contraseña válida de longitud máxima. | Contraseña completa verificable sin texto plano ni truncamiento; cambio rechazado y sin exposición de secretos. |
 | CA-05 | Intentar asignar campos internos y permisos de servicio/admin al registrar. | Sin control de campos internos ni elevación de privilegios. |
@@ -184,7 +186,7 @@ La elaboración de esta SPEC fue una etapa documental. Su aprobación, la del PL
 
 <!-- Actualizar secciones afectadas al resolverlas; no deducir aprobaciones. -->
 
-Ninguna decisión funcional pendiente. El usuario confirmó validaciones/perfil, la entrega conjunta #6/#5 y las dos decisiones siguientes el 2026-10-18, aprobó la SPEC completa el 2026-10-20 y confirmó el ajuste de contraseña a 72 bytes UTF-8 el 2026-10-23.
+Ninguna decisión funcional pendiente. El usuario confirmó validaciones/perfil, la entrega conjunta #6/#5 y las dos decisiones siguientes el 2026-10-18, aprobó la SPEC completa el 2026-10-20 y confirmó el ajuste anterior del 2026-10-23. El ajuste vigente #22, autorizado el 2026-10-25, está registrado al inicio: Argon2id, 6–100 puntos de código y retirada manual de cuentas ficticias anteriores.
 
 - **D-01, confirmada:** login con usuario o email, evitando coincidencias entre cuentas. El usuario pidió conservar una solución proporcional; PLAN deberá demostrar una garantía sencilla también para altas concurrentes. Si aparece una complejidad excesiva, consultar una simplificación antes de cambiar esta regla.
 - **D-02, confirmada:** JWT normal de 24 horas y extendido de 30 días con «recordarme», sin renovación automática. La elección no equivale a persistir la sesión en KMP ni a una renovación del token técnico.

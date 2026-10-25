@@ -3,7 +3,7 @@ package com.prog2.appointment.user.domain.ports.out;
 /** Protege y comprueba contraseñas completas; el algoritmo pertenece al adaptador de infraestructura. */
 public interface PasswordHasher {
     /**
-     * @param password contraseña previamente validada de al menos 6 caracteres y hasta 72 bytes UTF-8
+     * @param password contraseña previamente validada de 6 a 100 puntos de código Unicode
      * @return hash con sal aleatoria, sin conservar el valor original
      * @throws com.prog2.appointment.user.domain.exception.UserSecurityException si no se puede proteger la contraseña
      */
