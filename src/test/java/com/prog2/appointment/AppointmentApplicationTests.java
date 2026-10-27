@@ -114,8 +114,8 @@ class AppointmentApplicationTests {
         HttpResponse<String> response = get("/actuator/health");
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).isEqualTo("{\"status\":\"UP\"}");
-        assertThat(get("/actuator/env").statusCode()).isEqualTo(404);
-        assertThat(get("/actuator").statusCode()).isEqualTo(404);
+        assertThat(get("/actuator/env").statusCode()).isEqualTo(401);
+        assertThat(get("/actuator").statusCode()).isEqualTo(401);
     }
 
     @ParameterizedTest

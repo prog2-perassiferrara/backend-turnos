@@ -9,8 +9,8 @@ Detalle completo en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 
 Base técnica con Java 25, Spring Boot 4.1.1, Maven Wrapper 3.10.0,
 MySQL 8.4.8, JPA/Hibernate y Flyway. Incluye acceso técnico a cátedra mediante
-el contrato protegido de Catálogo, registro/login de usuarios, health y pruebas de integración.
-La protección transversal de APIs propias y las reservas conservan sus issues.
+el contrato protegido de Catálogo, registro/login de usuarios, protección JWT transversal,
+health y pruebas de integración. Disponibilidad, procesos y reservas conservan sus issues.
 
 ## Requisitos
 
@@ -46,6 +46,7 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CATEDRA_BASE_URL` | URL REST central suministrada por cátedra, sin usuario/contraseña en la URL. |
 | `CATEDRA_GROUP_ID` | Identificador normalizado de la integración esperada; no es un paciente. |
 | `JWT_PRIVATE_KEY_PATH` | Archivo externo PKCS#8 de privada RSA, al menos 2048 bits. En Compose es la ruta del host que se monta dentro del contenedor. |
+| `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
 
 Los puertos por defecto difieren de Catálogo (8080/3306) para ejecutar ambos juntos.
 Si están ocupados, cambiarlos en `.env`. Los contenedores de Turnos utilizan su propia
@@ -263,6 +264,51 @@ Respuestas con `Cache-Control: no-store`, sin cookies ni sesiones HTTP.
 No registrar cuerpos de estas solicitudes, hashes ni cabeceras bearer.
 Estas operaciones no agregan `/api/account`, administración ni recuperación de contraseña.
 
+## Protección de las APIs de Turnos
+
+Turnos verifica localmente firma RS256, emisor `backend-turnos`, audiencia `turnos`,
+identidad de cuenta, perfil `user`, autoridades y tiempos. Deriva la pública desde
+la privada RSA externa ya validada: no requiere otro archivo, configuración JWKS
+ni consultas a Catálogo/cátedra. La tolerancia temporal es de 30 segundos; se exigen
+emisión/vencimiento coherentes y se comprueba `nbf` si está presente.
+
+| Acceso | Política |
+| --- | --- |
+| `POST /api/register`, `POST /api/authenticate`, `GET /actuator/health` | Admiten solicitudes sin bearer. |
+| Otras operaciones bajo `/api/` | Requieren JWT de usuario válido y `ROLE_USER`, además de los permisos/propiedad del CU correspondiente. |
+| `/api/internal/**` y rutas restantes | Denegadas; Turnos no ofrece una API interna entrante en este alcance. |
+
+Una ruta pública permite omitir el token. Si se envía expresamente un bearer inválido
+o vencido, se responde 401 antes del controlador. KMP debe omitir esa cabecera en
+registro/login. Un token válido no crea una operación inexistente: una ruta de API
+no implementada sigue dando 404 después de superar la seguridad.
+
+Los rechazos de autenticación/autorización devuelven `401 AUTHENTICATION_REQUIRED` por autenticación ausente o
+inválida, y `403 ACCESS_DENIED` por falta de permiso, en `application/problem+json`,
+sin secretos y con `Cache-Control: no-store`. El 401 incluye `WWW-Authenticate: Bearer`.
+Los errores propios de registro/login conservan los códigos de la sección anterior.
+El despacho interno de errores no abre llamadas externas a `/error`.
+
+La identidad procede del principal autenticado, cuyo sujeto es el ID estable de cuenta;
+un ID o rol enviado libremente no lo sustituye. El contexto pertenece a cada petición,
+sin cookies ni sesión HTTP de autenticación. No se consulta la cuenta por petición ni
+se incorpora revocación: la activación se comprueba al iniciar sesión.
+La comprobación de propiedad efectiva se incorpora con cada CU de procesos/reservas,
+que todavía no están implementados. El acceso técnico saliente conserva su JWT propio
+de servicio; no se utiliza como sesión de usuario ni se entrega a KMP.
+
+CORS está cerrado por defecto. Si se configura, cada origen debe contener esquema
+HTTP(S), host y puerto opcional, sin ruta, query, fragmento ni credenciales; por ejemplo,
+`https://app.test,http://localhost:8082` con datos ficticios. Una configuración inválida
+impide el arranque con un diagnóstico sin valores sensibles. Los orígenes admitidos
+pueden utilizar `GET`, `POST`, `OPTIONS` y cabeceras `Authorization`/`Content-Type`, sin
+cookies de autenticación. Un preflight permitido no concede acceso a la operación.
+
+Se mantiene HTTP para desarrollo local/red privada de Compose y HTTPS al exponer el
+servicio fuera de ese entorno. Este issue no instala certificados ni proxy.
+Ver [SPEC](docs/features/seguridad-jwt/SPEC.md),
+[PLAN](docs/features/seguridad-jwt/PLAN.md) y [TASKS](docs/features/seguridad-jwt/TASKS.md).
+
 ## Compilar y verificar
 
 ```bash
@@ -278,6 +324,9 @@ configuración inválida/base inaccesible y el acceso técnico con proveedores H
 ficticios, firmas RSA efímeras, relojes controlados y barreras de concurrencia.
 También verifican registro/login, límites por puntos de código Unicode, campos internos manipulados,
 unicidad cruzada concurrente, commit incierto y persistencia al recrear el contexto.
+Las pruebas de seguridad ejecutan filtros y decoder reales con JWT firmados, comprueban
+perfiles, permisos, tiempos, identidad concurrente y CORS. Sus endpoints de observación
+existen exclusivamente en tests y no se incluyen en el artefacto productivo.
 No requieren una privada personal, `.env`, Kafka ni Catálogo/cátedra reales.
 Reportes de pruebas en `target/surefire-reports/`. JaCoCo mide la cobertura de
 las pruebas y genera `target/site/jacoco/jacoco.xml` e `index.html` durante `verify`.
