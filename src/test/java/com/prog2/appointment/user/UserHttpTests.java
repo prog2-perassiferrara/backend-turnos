@@ -140,8 +140,31 @@ class UserHttpTests {
         assertThat(Duration.between(claims.getIssueTime().toInstant(), claims.getExpirationTime().toInstant()))
                 .isEqualTo(Duration.ofHours(24));
         assertThat(get("/actuator/health").body()).isEqualTo("{\"status\":\"UP\"}");
-        assertThat(get("/api/account").statusCode()).isEqualTo(404);
+        assertProblem(get("/api/account"), 401, "AUTHENTICATION_REQUIRED");
+        // Con identidad válida se alcanza MVC: la ruta sigue sin implementarse y conserva el 404.
+        assertThat(get("/api/account", token).statusCode()).isEqualTo(404);
+        assertProblem(get("/error", token), 403, "ACCESS_DENIED");
         assertThat(output).doesNotContain(PASSWORD, hash, token);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/register", "/api/authenticate", "/actuator/health"})
+    void explicitlyInvalidBearerIsRejectedEvenOnPublicRoutes(String path) throws IOException, InterruptedException {
+        String marker = "fictional-invalid-bearer";
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                .timeout(Duration.ofSeconds(5)).header("Authorization", "Bearer " + marker);
+        if (path.equals("/actuator/health")) {
+            request.GET();
+        } else {
+            request.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"));
+        }
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+            assertProblem(response, 401, "AUTHENTICATION_REQUIRED");
+            assertThat(response.headers().firstValue("WWW-Authenticate")).contains("Bearer");
+            assertThat(response.body()).doesNotContain(marker);
+        }
+        assertThat(count("app_user")).isZero();
     }
 
     static Stream<Arguments> invalidRegistrationFields() {
@@ -468,7 +491,11 @@ class UserHttpTests {
         INTEGRATION.centralStatus.set(503);
         try {
             assertThat(register(profile("patient", "patient@example.test")).statusCode()).isEqualTo(201);
-            assertThat(authenticate("patient", PASSWORD, null).statusCode()).isEqualTo(200);
+            var login = authenticate("patient", PASSWORD, null);
+            assertThat(login.statusCode()).isEqualTo(200);
+            String token = json.readTree(login.body()).path("id_token").asString();
+            assertThat(get("/api/account", token).statusCode()).isEqualTo(404);
+            assertProblem(get("/api/account", "fictional-invalid-token"), 401, "AUTHENTICATION_REQUIRED");
             assertThat(INTEGRATION.catalogCalls.get()).isEqualTo(catalogCalls);
             assertThat(INTEGRATION.centralCalls.get()).isEqualTo(centralCalls);
         } finally {
@@ -536,9 +563,17 @@ class UserHttpTests {
     }
 
     private HttpResponse<String> get(String path) throws IOException, InterruptedException {
+        return get(path, null);
+    }
+
+    private HttpResponse<String> get(String path, String token) throws IOException, InterruptedException {
         try (var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
-            return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
-                    .timeout(Duration.ofSeconds(5)).GET().build(), HttpResponse.BodyHandlers.ofString());
+            var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+                    .timeout(Duration.ofSeconds(5)).GET();
+            if (token != null) {
+                request.header("Authorization", "Bearer " + token);
+            }
+            return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
         }
     }
 
