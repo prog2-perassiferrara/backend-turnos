@@ -60,8 +60,9 @@ class JwtSecurityPropertiesTests {
         var environment = new MockEnvironment().withProperty("CORS_ALLOWED_ORIGINS",
                 "https://app.test, http://localhost:8082");
         var properties = JwtSecurityProperties.from(JwtTestTokens.access(), environment);
-        assertThat(properties.allowedOrigins()).containsExactly("https://app.test", "http://localhost:8082");
-        assertThatThrownBy(() -> properties.allowedOrigins().add("http://other.test"))
+        var allowedOrigins = properties.allowedOrigins();
+        assertThat(allowedOrigins).containsExactly("https://app.test", "http://localhost:8082");
+        assertThatThrownBy(() -> allowedOrigins.add("http://other.test"))
                 .isInstanceOf(UnsupportedOperationException.class);
         var origins = new ArrayList<>(List.of("https://app.test"));
         var copied = new JwtSecurityProperties((RSAPublicKey) JwtTestTokens.KEYS.getPublic(), origins);
