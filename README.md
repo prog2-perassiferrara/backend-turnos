@@ -49,9 +49,9 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
 | `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
 | `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
-| `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de creación y confirmación del hold, `5s`; total por POST de `10s`. Sin repetición automática. |
+| `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los POST y la consulta de ocupaciones, `5s`; total por llamada de `10s`. Sin replay del transporte. |
 | `RESERVATION_METADATA_TIMEOUT` | Opcional, espera de metadata Kafka, `5s`. |
-| `RESERVATION_ATTEMPTS` | Opcional, presupuesto de preparación/recepción, `3` intentos en total; admite 1 a 10. No reintenta los POST centrales. |
+| `RESERVATION_ATTEMPTS` | Opcional, presupuesto de preparación/recepción, `3` intentos en total; admite 1 a 10. También limita creaciones tras consulta de ocupaciones libre; no reintenta confirmaciones. |
 | `RESERVATION_RETRY_DELAY` | Opcional, pausa entre intentos Kafka, `5s`. |
 | `RESERVATION_PREPARATION_COOLDOWN` | Opcional, espera mínima tras agotar preparación, `30s`; un nuevo inicio/reintento puede solicitar otro ciclo. |
 
@@ -480,9 +480,16 @@ El inbox confirma los efectos y el recibo antes del offset; deduplica por `event
 y conserva mensajes incoherentes o aún no correlacionados. Un evento recibido antes
 de la respuesta REST prevalece y no reinicia el plazo. La base y los offsets permiten
 conservar el progreso tras reinicios; este CU no ejecuta recuperación remota completa.
-Un timeout no libera el proceso ni habilita repetir un POST. Si se pierde la respuesta
-de creación sin conocer IDs centrales, queda `HOLD_UNCERTAIN`: el contrato no ofrece
-consulta de holds ni idempotencia de creación para resolverlo automáticamente.
+Una confirmación incierta mantiene el proceso y no repite su POST. Si se pierde la
+respuesta de creación sin IDs, Turnos guarda incertidumbre y consulta ocupaciones:
+HELD/CONFIRMED impiden otro POST; HELD devuelve `recheckAt` en el problema HTTP
+para esperar y volver a consultar, sin asumir propiedad. Una posición libre permite
+otra creación dentro del presupuesto, tras revalidar agenda/canal/reloj y contemplando
+un posible 409. Al detenerse archiva como `HOLD_ATTEMPT_ABANDONED`, que libera solo
+la exclusión local; repetir su requestId devuelve ese cierre y una nueva acción usa
+otro UUID y consultas nuevas. Consulta fallida o presupuesto agotado no habilitan
+POST adicionales. El TTL predeterminado central de diez minutos empieza al crearse
+el hold; nunca se libera por diez minutos desde un timeout local.
 Desconectar el cliente tampoco cancela el proceso.
 
 Contrato y diseño: [SPEC](docs/features/inicio-reserva/SPEC.md),

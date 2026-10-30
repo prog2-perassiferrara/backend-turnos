@@ -25,7 +25,7 @@ public final class ReservationProblemHandler {
     @ExceptionHandler(ReservationOperationException.class)
     ResponseEntity<ProblemDetail> operation(
             ReservationOperationException failure, HttpServletRequest request) {
-        return problem(failure.failure(), failure.processId(), request);
+        return problem(failure.failure(), failure.processId(), request, failure.recheckAt());
     }
 
     @ExceptionHandler(ReservationGatewayException.class)
@@ -60,6 +60,14 @@ public final class ReservationProblemHandler {
 
     private static ResponseEntity<ProblemDetail> problem(
             ReservationFailure failure, UUID processId, HttpServletRequest request) {
+        return problem(failure, processId, request, null);
+    }
+
+    private static ResponseEntity<ProblemDetail> problem(
+            ReservationFailure failure,
+            UUID processId,
+            HttpServletRequest request,
+            java.time.Instant recheckAt) {
         HttpStatus status =
                 switch (failure) {
                     case INVALID_RESERVATION_SELECTION, PROFILE_NOT_RESERVABLE ->
@@ -79,6 +87,9 @@ public final class ReservationProblemHandler {
         body.setProperty("code", failure.name());
         if (processId != null) {
             body.setProperty("processId", processId.toString());
+        }
+        if (recheckAt != null) {
+            body.setProperty("recheckAt", recheckAt);
         }
         return ResponseEntity.status(status)
                 .cacheControl(CacheControl.noStore())

@@ -9,6 +9,8 @@
 
 **Ajuste autorizado, 2026-10-30:** el registro incorpora únicamente el mínimo de dos caracteres por nombre/apellido, conservando su máximo de 50, mediante la validación del DTO de user indicada en [su PLAN](../registro-autenticacion/PLAN.md). RF-01/CA-01 mantienen la defensa de reservas para perfiles existentes incompatibles; la integración prepara esos perfiles directamente en la base temporal y comprueba el inicio con un perfil nuevo mínimo válido. Sin cambios al modelo de paciente central ni a las tablas.
 
+**Ajuste autorizado, 2026-10-30, creación incierta:** extender `AppointmentHoldGateway` con consulta de la ocupación seleccionada y modelos/DTO propios, sin internals de otros slices. Aplicación guarda incertidumbre, consulta y solo permite repetir creación tras posición libre, con `RESERVATION_ATTEMPTS` (3 por defecto, total) y revalidación de agenda/canal/reloj. Conserva una única ejecución original por requestId; los replays no ejecutan POST. HELD/CONFIRMED, consulta fallida o presupuesto agotado archivan sin IDs como `HOLD_ATTEMPT_ABANDONED`, liberando únicamente exclusión local; `recheckAt` opcional en el problema HTTP identifica el instante central para volver a consultar una posición HELD, nunca un vencimiento propio. Confirmación REST no se reintenta. Se entrega Clock con zona de atención y presupuesto por constructor (siete dependencias), sin políticas/clases de ejecución adicionales ni migraciones. RF-03/RF-04/RF-07/RF-08 y CA-03/CA-06/CA-07/CA-09; casos antes/depués de expiresAt, libre→409, falta de consulta y reinicio de intento abandonado. Autorización directa del usuario tras la respuesta docente, sin nueva ronda de aprobación.
+
 <!-- PARA LA PERSONA
 Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
 Este documento define la solución técnica. Una vez revisado, el agente puede
@@ -43,7 +45,7 @@ derivar TASKS.md con tareas, dependencias y comprobaciones.
 | Cuenta local | [UserAccountRepository](../../../src/main/java/com/prog2/appointment/user/domain/ports/out/UserAccountRepository.java), [UserAccountEntity](../../../src/main/java/com/prog2/appointment/user/infrastructure/persistence/entity/UserAccountEntity.java) | No existe lectura pública del perfil por ID; el modelo de autenticación no contiene nombres. Ampliar user con una lectura mínima. |
 | Transacciones | [TransactionalUserAccountStore](../../../src/main/java/com/prog2/appointment/user/infrastructure/persistence/service/TransactionalUserAccountStore.java) | Bean separado con @Transactional; el adaptador captura también errores de commit. Conservar ese enfoque. |
 | Integración | [TechnicalAccessUseCase](../../../src/main/java/com/prog2/appointment/integration/domain/ports/in/TechnicalAccessUseCase.java), [IntegrationConfiguration](../../../src/main/java/com/prog2/appointment/integration/domain/model/IntegrationConfiguration.java) | JWT, bootstrap, topics y grupo asignados. Turnos aún no consume acciones Kafka. |
-| Seguridad/tiempo | [SecurityConfiguration](../../../src/main/java/com/prog2/appointment/infrastructure/security/config/SecurityConfiguration.java), [AvailabilityProperties](../../../src/main/java/com/prog2/appointment/infrastructure/config/AvailabilityProperties.java) | /api/** exige usuario/ROLE_USER; existen Clock y zona de atención. |
+| Seguridad/tiempo | [SecurityConfiguration](../../../src/main/java/com/prog2/appointment/infrastructure/security/config/SecurityConfiguration.java), [AvailabilityProperties](../../../src/main/java/com/prog2/appointment/infrastructure/config/AvailabilityProperties.java) | /api/** exige usuario/ROLE_USER; existen Clock y zona de atención; el caso de inicio recibe un Clock con esa zona. |
 | Stack | [pom.xml](../../../pom.xml), [V2](../../../src/main/resources/db/migration/V2__create_users.sql) | Java 25/Boot 4.1.1, JPA/MySQL 8.4.8, Flyway y Testcontainers; sin dependencia Kafka en Turnos. |
 
 **Convenciones y patrón de referencia:** arquitectura hexagonal con slices, estructura existente y [material de clase](../../../../MATERIA_REFERENCE.md). Dominio puro, puertos propios y adaptadores separados. Constructor DI, sin @Autowired ni @Data; Javadoc tradicional en español. Las clases nuevas son propuestas, no componentes implementados.
@@ -61,7 +63,7 @@ La composición confirmada en **D-02** usa contratos propios: `ReservationPatien
 1. Obtener ownerId del sub validado y reconocer reintentos propios mediante D-03. Devolver un proceso existente sin repetir efectos; rechazar otra selección con la misma clave. Solicitar preparación asíncrona del consumidor si hace falta, sin condicionar esa respuesta local a un proveedor.
 2. Comprobar perfil, pendiente existente y selección. Reejecutar CU-03 mediante el adaptador propuesto, sin confiar en disponibilidad anterior de KMP.
 3. Exigir acceso técnico y canal Kafka preparado. Registrar el proceso en MySQL antes del primer POST; su restricción única resuelve la carrera por usuario.
-4. Crear el hold una vez, conservar IDs/vencimiento y registrar la intención de confirmar antes del segundo POST. Ninguna transacción abarca HTTP.
+4. Crear el hold con un POST por intento; tras respuesta incierta sin IDs, consultar ocupaciones y repetir únicamente si está libre dentro del presupuesto. Conservar IDs/vencimiento y registrar la intención de confirmar antes del segundo POST. Ninguna transacción abarca HTTP.
 5. Aplicar eventos y deduplicación atómicamente; combinar REST con la última versión del proceso sin retroceso. Devolver progreso o incertidumbre propios; no encolar un replay automático de ambos POST.
 
 ```mermaid
@@ -83,6 +85,8 @@ classDiagram
         acceptInitialConfirmation()
         apply()
         recordFailure()
+        prepareHoldRetry()
+        abandonHoldAttempt()
     }
     class ReservationProcessRepository {
         <<interface>>
@@ -100,6 +104,7 @@ classDiagram
         <<interface>>
         create()
         confirm()
+        findOccupancy()
     }
     class ReservationMessagingReadiness {
         <<interface>>
@@ -176,7 +181,8 @@ Referencia RF/CA y completa solo los puntos pertinentes al backend. -->
 
 | Fase propuesta | Significado |
 | --- | --- |
-| CREATING_HOLD / HOLD_UNCERTAIN | Intención antes del POST / resultado de creación desconocido; otra ejecución no puede recrear a ciegas. |
+| CREATING_HOLD / HOLD_UNCERTAIN | Intención antes de cada POST / resultado desconocido; consulta de ocupaciones antes de preparar otro intento acotado. |
+| HOLD_ATTEMPT_ABANDONED | Cierre local del intento sin IDs; no acredita cancelación ni expiración central. Otra acción exige validación/ocupaciones nuevas. |
 | HELD | IDs/vencimiento guardados, sin confirmación inicial acreditada. |
 | CONFIRMING / CONFIRMATION_UNCERTAIN | Intención previa al segundo POST / resultado desconocido. |
 | WAITING_FOR_REQUEST | 202 aceptado, sin solicitud Kafka recibida. |
@@ -189,7 +195,7 @@ El receptor valida v1, key/proceso, hold y groupId cuando exista. Aplica solicit
 
 - **Conservación y restauración del estado:** TransactionalReservationStore con REQUIRES_NEW/timeout 10 s; adaptador externo captura commit. Cambios con versión e identificador de escritura: ante commit ambiguo, un reread fresco verifica el recibo propio antes de continuar. Si no se verifica, indisponibilidad sin siguiente POST. Tras reiniciar, fases intermedias/inbox permanecen; no recrear por perder memoria ni prometer CU-09 completo.
 - **Ejecución, concurrencia y cancelación de operaciones:** flujo HTTP síncrono como CU-03, intención durable antes de cada efecto y sin transacción durante red. UNIQUE protege usuario; @Version protege carrera REST/Kafka. Ante conflicto local, releer/aplicar transición monotónica hasta tres veces, sin repetir HTTP. Un commit ambiguo no concede ejecución: verificar su marca. Releer Clock inmediatamente antes de los POST: no enviar una nueva creación para un inicio ya pasado ni confirmar fuera de expiresAt; conservar cualquier efecto previo no resuelto. La repetición propia devuelve progreso sin depender de proveedores; reconocerla antes de volver a exigir una fecha futura evita rechazar un histórico por el paso del tiempo. Sin cancelación al desconectar KMP ni abandono implícito.
-- **Errores, reintentos y prevención de duplicados:** un intento por POST, sin redirects/reintentos automáticos. El gateway distingue fallo previo a invocar HTTP de resultado incierto tras intentarlo, sin atribuir ausencia de efectos a cualquier excepción. Clasificar HTTP/code: rechazo documentado al crear puede cerrar sin hold; timeout, 5xx o respuesta no verificable tras envío permanecen inciertos. Rechazo al confirmar no libera hold; RESERVATION_PROCESS_ALREADY_CONFIRMED exige reconciliación. Un 401 invalida ese JWT y conserva #4, sin replay. HOLD_EXPIRED acredita vencimiento; HOLD_NOT_FOUND no resuelve una confirmación anterior incierta.
+- **Errores, reintentos y prevención de duplicados:** un intento por llamada del gateway, sin redirects/reintentos del transporte; aplicación limita las nuevas creaciones tras consulta de ocupación libre. El gateway distingue fallo previo a invocar HTTP de resultado incierto tras intentarlo, sin atribuir ausencia de efectos a cualquier excepción. Clasificar HTTP/code: rechazo documentado al crear puede cerrar sin hold; timeout, 5xx o respuesta no verificable de creación se guardan inciertos antes de reconsultar; HELD/CONFIRMED, fallo de consulta o presupuesto agotado archivan el intento no identificable. No atribuir la ocupación al usuario. Una confirmación incierta conserva el hold y la exclusión. Rechazo al confirmar no libera hold; RESERVATION_PROCESS_ALREADY_CONFIRMED exige reconciliación. Un 401 invalida ese JWT y conserva #4, sin replay. HOLD_EXPIRED acredita vencimiento; HOLD_NOT_FOUND no resuelve una confirmación anterior incierta.
 - **Observabilidad y diagnósticos seguros:** motivos estables y referencia propia; sin cuerpos, nombres, JWT o configuración completa en logs. Advice solo del controlador: 400 entrada/perfil inválidos; 409 pendiente/horario/clave reutilizada; 503 proveedores/Kafka/almacenamiento; 500 inesperado. Conservar filtros 401/403. Tras iniciar, error con referencia propia conocida y señal de incertidumbre, sin datos ajenos.
 
 ### Recepción Kafka y preparación del canal
@@ -207,7 +213,7 @@ con el proyecto y justifica las incorporaciones. No agregues dependencias por de
 
 - Agregar spring-boot-starter-kafka y testcontainers-kafka de test, sin versiones manuales. BOM local Boot 4.1.1 verificado: Spring Kafka 4.1.1, kafka-clients 4.2.1, Testcontainers 2.0.5. Sin motor de sagas, Spring Retry, Redis ni otra base.
 - Reutilizar WebClient, JPA/Flyway, Clock, zona, claves y URLs. No modificar internals o políticas de #4/CU-03.
-- ReservationProperties/YAML con sobrescritura por entorno y defaults propuestos: HTTP 5 s (total 10 s por POST), metadata Kafka 5 s, preparación/errores 3 intentos y pausa 5 s, enfriamiento de preparación 30 s. Validar rangos al arrancar. Estado dinámico fuera de properties.
+- ReservationProperties/YAML con sobrescritura por entorno y defaults propuestos: HTTP 5 s (total 10 s por POST), metadata Kafka 5 s, preparación/errores Kafka y creación condicionada por ocupaciones, 3 intentos totales; pausa Kafka de 5 s, enfriamiento de preparación 30 s. Validar rangos al arrancar. Estado dinámico fuera de properties.
 - Sin broker central nuevo en Compose/CI; las pruebas administran Kafka/MySQL temporales. README: contrato/idempotencia, fases, variables y ejecución. OpenAPI continúa postergado.
 - Referencias: [contenedores Spring Kafka](https://docs.spring.io/spring-kafka/reference/kafka/receiving-messages/message-listener-container.html), contrastar APIs con fuentes locales 4.1.1; [columnas generadas MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/create-table-generated-columns.html). Restricción y offsets se prueban con servicios temporales; leer documentación no los acredita.
 
@@ -227,7 +233,7 @@ Tests nuevos propuestos en `src/test/java/com/prog2/appointment/reservation/`: a
 | CA-03 | ReservationPersistenceTests/ReservationConcurrencyTests. | MySQL, instancias independientes, solicitudes solapadas y reintento de clave tras cerrar. | Un pendiente/POST; misma clave devuelve histórico sin hold, otra selección da conflicto y abandono conserva exclusión. |
 | CA-04 | ReservationHttpTests/ReservationGatewayTests. | Dos POST observables y lecturas frescas. | Propietario/IDs confirmados antes del siguiente efecto; mismo paciente, progreso pendiente. |
 | CA-05 | ReservationProcessTests/ReservationKafkaTests. | Kafka y MySQL; evento antes de liberar 202, retrasado/repetido/tras cierre. | WAITING_FOR_PHONE no retrocede; eventId una vez, sin correlación inventada ni mezcla. |
-| CA-06 | Gateways/persistencia. | Cortes remotos y fallos antes/después del commit real. | No replay por timeout/401/5xx/JSON; verificar escritura propia y mantener exclusión incierta. |
+| CA-06 | Gateways/persistencia y orquestación. | Cortes, ocupaciones HELD/CONFIRMED/libre, consulta fallida, presupuesto agotado, carrera 409 y fallos de commit. | Intención antes de cada creación condicionada; sin replay de confirmación ni recuperación ficticia de IDs. |
 | CA-07 | Agregado/caso con reloj. | Antes/en/después del plazo y vencimiento central. | Sin renovación, confirmación tardía ni reapertura de vencido. |
 | CA-08 | Concurrencia HTTP de dos usuarios. | Mismo horario, central ficticia que arbitra; confirmación rechazada. | Conflicto aislado; rechazo no borra/libera el hold. |
 | CA-09 | Reinicio de contexto/consumidor. | Misma DB; interrupción con intención/IDs y después del commit antes del ACK. | Datos/límite durables; retoma/deduplicación sin recreación automática. |
@@ -239,7 +245,7 @@ Tests nuevos propuestos en `src/test/java/com/prog2/appointment/reservation/`: a
 
 **Pruebas operativas del backend:** JAR/Compose de Turnos con DB/broker descartables y HTTP ficticio, sin .env/servicios reales; dos POST, evento anticipado y reinicio/offset. Crear holds reales tiene efectos centrales: requiere autorización separada, datos ficticios e identificación/cierre del proceso; no reiniciar/reconstruir Catálogo por ese ensayo.
 
-**Limitaciones del entorno:** conectividad, REST y recepción Kafka se acreditan por separado. Sin solicitud central auténtica no afirmar flujo completo ni fabricar eventos para simular evidencia real. La creación perdida sin IDs conserva el límite contractual de SPEC: probar incertidumbre segura, no recuperación central inexistente.
+**Limitaciones del entorno:** conectividad, REST y recepción Kafka se acreditan por separado. Sin solicitud central auténtica no afirmar flujo completo ni fabricar eventos para simular evidencia real. La creación perdida sin IDs sigue sin poder recuperar los IDs centrales, pero dispone del criterio docente de abandono/ocupaciones/reintentos limitados. No confundir ese criterio con consulta del hold por propietario ni con recuperación de confirmaciones inciertas.
 
 <!-- Esta sección planifica la validación. Durante la implementación, registra
 en TASKS.md o en el informe de validación acordado los resultados y evidencias
@@ -264,9 +270,9 @@ Incluye puntos de comprobación para avanzar con cambios pequeños. -->
 <!-- Riesgos concretos de esta solución y cómo se resolverán, sin listas genéricas.
 Escribe Ninguna en las decisiones pendientes cuando estén resueltas. -->
 
-- **Riesgos y medidas acordadas:** no hay transacción distribuida; guardar intención/resultado y no repetir efectos ciegamente. UNIQUE protege la carrera que una comprobación previa no evita. Reread de versión/recibo protege commits/respuestas perdidos; probar intercalados. Readiness no garantiza publicación futura. Resultado central conocido no libera abandono pendiente. Sin IDs no inventar recuperación automática ni plazo máximo de liberación.
+- **Riesgos y medidas acordadas:** no hay transacción distribuida; guardar intención/resultado y no repetir efectos ciegamente. UNIQUE protege la carrera que una comprobación previa no evita. Reread de versión/recibo protege commits/respuestas perdidos; probar intercalados. Readiness no garantiza publicación futura. Resultado central conocido no libera abandono pendiente. Sin IDs aplicar ocupaciones según la aclaración: no inventar IDs, propiedad ni un plazo local de liberación.
 - **D-02, confirmada por el usuario el 2026-10-29:** composición por puertos públicos hacia user/availability/integration, con modelos propios de reservas. La lectura de perfil es una interfaz Java interna, no un endpoint; reutilizar CU-03 incluye su consulta de ocupaciones.
-- **D-03, confirmada por el usuario el 2026-10-29:** requestId UUID por intento, reutilizado por KMP, como identidad/idempotencia local. Usa la clave del proceso sin otra tabla/servicio: permite reconocer la misma acción incluso después de cerrar el pendiente. No agrega idempotencia a cátedra ni recupera IDs centrales perdidos.
+- **D-03, confirmada por el usuario el 2026-10-29:** requestId UUID por acción lógica, reutilizado por KMP, como identidad/idempotencia local. La ejecución original puede realizar creaciones internas limitadas y condicionadas por ocupaciones; los replays HTTP no ejecutan POST. Usa la clave del proceso sin otra tabla/servicio: permite reconocer la misma acción incluso después de cerrar el pendiente. No agrega idempotencia a cátedra ni recupera IDs centrales perdidos.
 - **Decisiones pendientes:** ninguna entre las opciones consultadas. El límite contractual de la SPEC se conserva; no se promete recuperación central completa.
 - **Aprobación del PLAN completo:** explícita del usuario el 2026-10-29; la implementación requiere autorización posterior.
 

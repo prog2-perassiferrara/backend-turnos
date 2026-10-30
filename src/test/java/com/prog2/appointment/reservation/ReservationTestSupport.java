@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +50,8 @@ public final class ReservationTestSupport implements AutoCloseable {
     public final AtomicInteger creates = new AtomicInteger();
     public final AtomicInteger confirmations = new AtomicInteger();
     public final AtomicInteger credentialFailures = new AtomicInteger();
+    public final AtomicInteger occupancyQueries = new AtomicInteger();
+    public final AtomicReference<HttpHandler> occupanciesOverride = new AtomicReference<>();
     public final AtomicBoolean dropCreation = new AtomicBoolean();
     public final AtomicInteger creationStatus = new AtomicInteger(201);
     public final AtomicInteger confirmationStatus = new AtomicInteger(202);
@@ -93,6 +94,8 @@ public final class ReservationTestSupport implements AutoCloseable {
     }
 
     public void reset() {
+        occupancyQueries.set(0);
+        occupanciesOverride.set(null);
         creates.set(0);
         confirmations.set(0);
         credentialFailures.set(0);
@@ -175,20 +178,47 @@ public final class ReservationTestSupport implements AutoCloseable {
             return;
         }
         if (path.equals("/api/appointment-occupancies")) {
+            occupancyQueries.incrementAndGet();
+            var custom = occupanciesOverride.get();
+            if (custom != null) {
+                custom.handle(exchange);
+                return;
+            }
             var query = query(exchange.getRequestURI().getRawQuery());
+            long professional = Long.parseLong(query.get("professionalId"));
+            var occupied =
+                    holds.values().stream()
+                            .filter(
+                                    hold ->
+                                            hold.professional() == professional
+                                                    && hold.date().equals(query.get("from")))
+                            .map(
+                                    hold ->
+                                            Map.of(
+                                                    "date",
+                                                    hold.date(),
+                                                    "startTime",
+                                                    hold.time(),
+                                                    "status",
+                                                    "HELD",
+                                                    "expiresAt",
+                                                    ReservationProcessTests.HOLD
+                                                            .expiresAt()
+                                                            .toString()))
+                            .toList();
             reply(
                     exchange,
                     200,
                     json.writeValueAsString(
                             Map.of(
                                     "professionalId",
-                                    Long.parseLong(query.get("professionalId")),
+                                    professional,
                                     "from",
                                     query.get("from"),
                                     "to",
                                     query.get("to"),
                                     "occupancies",
-                                    List.of())));
+                                    occupied)));
             return;
         }
         if (path.equals("/api/appointment-holds") && "POST".equals(exchange.getRequestMethod())) {
@@ -302,6 +332,11 @@ public final class ReservationTestSupport implements AutoCloseable {
                                 "WAITING_FOR_PHONE",
                                 "expiresAt",
                                 ReservationProcessTests.HOLD.expiresAt().toString())));
+    }
+
+    /** Simula la liberación central de posiciones, sin inferir propiedad en el backend. */
+    public void releaseHolds() {
+        holds.clear();
     }
 
     public static String event(Hold hold, String type, String eventId) {

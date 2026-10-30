@@ -114,9 +114,16 @@ public class ReservationConfiguration {
             ReservationProcessRepository repository,
             ReservationKafkaChannel messaging,
             Clock clock,
-            AvailabilityProperties properties) {
+            AvailabilityProperties properties,
+            ReservationProperties reservationProperties) {
         return new StartReservationUseCaseImpl(
-                patients, slots, holds, repository, messaging, clock, properties.timeZone());
+                patients,
+                slots,
+                holds,
+                repository,
+                messaging,
+                clock.withZone(properties.timeZone()),
+                reservationProperties.attempts());
     }
 
     @Bean

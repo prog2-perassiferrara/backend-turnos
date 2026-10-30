@@ -1,7 +1,7 @@
 package com.prog2.appointment.reservation.application.usecases;
 
 import java.time.Clock;
-import java.time.ZoneId;
+import java.time.Instant;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
@@ -28,7 +28,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
     private final ReservationProcessRepository repository;
     private final ReservationMessagingReadiness messaging;
     private final Clock clock;
-    private final ZoneId zone;
+    private final int holdAttempts;
 
     public StartReservationUseCaseImpl(
             ReservationPatientGateway patients,
@@ -37,14 +37,17 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
             ReservationProcessRepository repository,
             ReservationMessagingReadiness messaging,
             Clock clock,
-            ZoneId zone) {
+            int holdAttempts) {
         this.patients = patients;
         this.slots = slots;
         this.holds = holds;
         this.repository = repository;
         this.messaging = messaging;
         this.clock = clock;
-        this.zone = zone;
+        if (holdAttempts < 1 || holdAttempts > 10) {
+            throw new IllegalArgumentException("Invalid hold attempt budget");
+        }
+        this.holdAttempts = holdAttempts;
     }
 
     @Override
@@ -95,8 +98,11 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
                 throw new ReservationGatewayException(
                         ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
             }
-            var hold = holds.create(process);
-            process = repository.update(process.id(), value -> value.acceptHold(hold));
+            process = createHold(process);
+            if (process.phase() != ReservationPhase.HELD) {
+                return process;
+            }
+            var hold = process.hold();
             if (!clock.instant().isBefore(hold.expiresAt())) {
                 throw new ReservationGatewayException(
                         ReservationFailure.CONFIRMATION_REJECTED, false, true);
@@ -128,6 +134,74 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         }
     }
 
+    private ReservationProcess createHold(ReservationProcess process) {
+        for (int attempt = 1; attempt <= holdAttempts; attempt++) {
+            if (process.phase() != ReservationPhase.CREATING_HOLD) {
+                return process;
+            }
+            if (!isFuture(process.selection())) {
+                if (attempt > 1) {
+                    throw abandon(process, ReservationFailure.INVALID_RESERVATION_SELECTION, null);
+                }
+                throw new ReservationGatewayException(
+                        ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
+            }
+            try {
+                var hold = holds.create(process);
+                return repository.update(process.id(), value -> value.acceptHold(hold));
+            } catch (ReservationGatewayException failure) {
+                if (!failure.attempted() || failure.definitive()) {
+                    if (attempt > 1) {
+                        throw abandon(process, failure.failure(), null);
+                    }
+                    throw failure;
+                }
+                process = retryUnknownCreation(process, failure, attempt);
+            }
+        }
+        throw abandon(process, ReservationFailure.HOLD_CREATION_UNCERTAIN, null);
+    }
+
+    private ReservationProcess retryUnknownCreation(
+            ReservationProcess process, ReservationGatewayException failure, int attempt) {
+        process =
+                repository.update(
+                        process.id(), value -> value.recordFailure(failure, clock.instant()));
+        try {
+            var occupation = holds.findOccupancy(process.selection());
+            if (occupation.isPresent()) {
+                // Su expiresAt pertenece a la posición observada, no a un hold propio recuperado.
+                throw abandon(
+                        process,
+                        ReservationFailure.SLOT_NOT_AVAILABLE,
+                        occupation.get().expiresAt());
+            }
+            if (attempt >= holdAttempts) {
+                throw abandon(process, ReservationFailure.HOLD_CREATION_UNCERTAIN, null);
+            }
+            if (!isFuture(process.selection())) {
+                throw abandon(process, ReservationFailure.INVALID_RESERVATION_SELECTION, null);
+            }
+            slots.verify(process.selection());
+            messaging.requireReady();
+        } catch (ReservationGatewayException unavailable) {
+            throw abandon(process, unavailable.failure(), null);
+        }
+        return repository.update(process.id(), ReservationProcess::prepareHoldRetry);
+    }
+
+    private ReservationOperationException abandon(
+            ReservationProcess process, ReservationFailure failure, Instant recheckAt) {
+        var closed =
+                repository.update(
+                        process.id(),
+                        value ->
+                                value.abandonHoldAttempt(
+                                        ReservationFailure.HOLD_CREATION_UNCERTAIN.name(),
+                                        clock.instant()));
+        return new ReservationOperationException(failure, closed.id(), recheckAt);
+    }
+
     private void validTime(ReservationSelection selection) {
         if (!isFuture(selection)) {
             throw error(ReservationFailure.INVALID_RESERVATION_SELECTION, null);
@@ -135,7 +209,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
     }
 
     private boolean isFuture(ReservationSelection selection) {
-        var now = clock.instant().atZone(zone).toLocalDateTime();
+        var now = clock.instant().atZone(clock.getZone()).toLocalDateTime();
         return selection.date().atTime(selection.startTime()).isAfter(now);
     }
 

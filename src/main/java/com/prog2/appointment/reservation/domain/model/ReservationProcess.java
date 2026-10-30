@@ -73,6 +73,30 @@ public record ReservationProcess(
         return change(ReservationPhase.HELD, value, requestEventId, reservationId, null, null);
     }
 
+    /** Nueva intención después de observar la posición libre; conserva la identidad lógica. */
+    public ReservationProcess prepareHoldRetry() {
+        if (phase != ReservationPhase.HOLD_UNCERTAIN || hold != null) {
+            return this;
+        }
+        return change(ReservationPhase.CREATING_HOLD, null, null, null, null, null);
+    }
+
+    /**
+     * Cierra solo el intento no identificable; no acredita cancelar ni vencer el hold central.
+     *
+     * @param reason motivo seguro de salida
+     * @param now instante del cierre local
+     * @return estado final local sin liberar un hold conocido
+     */
+    public ReservationProcess abandonHoldAttempt(String reason, Instant now) {
+        if (hold != null
+                || phase != ReservationPhase.HOLD_UNCERTAIN
+                        && phase != ReservationPhase.CREATING_HOLD) {
+            return this;
+        }
+        return change(ReservationPhase.HOLD_ATTEMPT_ABANDONED, null, null, null, reason, now);
+    }
+
     public ReservationProcess beginConfirmation() {
         if (phase != ReservationPhase.HELD) {
             return this;
@@ -242,7 +266,8 @@ public record ReservationProcess(
         boolean pendingAbandonment =
                 abandonmentPending
                         && state != ReservationPhase.CANCELLED
-                        && state != ReservationPhase.EXPIRED;
+                        && state != ReservationPhase.EXPIRED
+                        && state != ReservationPhase.HOLD_ATTEMPT_ABANDONED;
         return new ReservationProcess(
                 id,
                 patient,

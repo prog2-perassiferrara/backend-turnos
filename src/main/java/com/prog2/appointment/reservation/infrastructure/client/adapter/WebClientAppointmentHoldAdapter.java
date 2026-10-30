@@ -2,6 +2,7 @@ package com.prog2.appointment.reservation.infrastructure.client.adapter;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -9,9 +10,12 @@ import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.HoldDetails;
+import com.prog2.appointment.reservation.domain.model.HoldOccupancy;
+import com.prog2.appointment.reservation.domain.model.ReservationSelection;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.ports.out.AppointmentHoldGateway;
 import com.prog2.appointment.reservation.infrastructure.client.dto.HoldResponse;
+import com.prog2.appointment.reservation.infrastructure.client.dto.HoldOccupanciesResponse;
 import reactor.core.publisher.Mono;
 
 /**
@@ -74,13 +78,100 @@ public final class WebClientAppointmentHoldAdapter implements AppointmentHoldGat
         return process.hold();
     }
 
-    private HoldResponse post(String holdId, Object body, int accepted) {
-        String token;
+    @Override
+    public Optional<HoldOccupancy> findOccupancy(ReservationSelection selection) {
+        String token = accessToken();
         try {
-            token = access.getAccess().token().value();
+            var response =
+                    client.get()
+                            .uri(
+                                    builder ->
+                                            builder.path("/api/appointment-occupancies")
+                                                    .queryParam(
+                                                            "professionalId",
+                                                            selection.professionalId())
+                                                    .queryParam("from", selection.date())
+                                                    .queryParam("to", selection.date())
+                                                    .build())
+                            .headers(headers -> headers.setBearerAuth(token))
+                            .accept(MediaType.APPLICATION_JSON)
+                            .exchangeToMono(
+                                    result -> {
+                                        if (result.statusCode().value() == 200) {
+                                            return result.bodyToMono(HoldOccupanciesResponse.class);
+                                        }
+                                        if (result.statusCode().value() == 401) {
+                                            access.rejectAccess(token);
+                                        }
+                                        return result.releaseBody()
+                                                .then(
+                                                        Mono.error(
+                                                                failure(
+                                                                        ReservationFailure
+                                                                                .OCCUPANCIES_UNAVAILABLE,
+                                                                        false,
+                                                                        false)));
+                                    })
+                            .block(timeout.multipliedBy(2));
+            return selectedOccupancy(response, selection);
+        } catch (ReservationGatewayException unavailable) {
+            throw unavailable;
+        } catch (RuntimeException _) {
+            throw failure(ReservationFailure.OCCUPANCIES_UNAVAILABLE, false, false);
+        }
+    }
+
+    private static Optional<HoldOccupancy> selectedOccupancy(
+            HoldOccupanciesResponse response, ReservationSelection selection) {
+        if (response == null
+                || response.professionalId() == null
+                || response.professionalId() != selection.professionalId()
+                || !selection.date().equals(response.from())
+                || !selection.date().equals(response.to())
+                || response.occupancies() == null) {
+            throw new IllegalArgumentException();
+        }
+        HoldOccupancy selected = null;
+        for (var value : response.occupancies()) {
+            var occupied = occupation(value, selection);
+            if (value.startTime().equals(selection.startTime())) {
+                if (selected == null
+                        || occupied.confirmed()
+                        || !selected.confirmed()
+                                && occupied.expiresAt().isAfter(selected.expiresAt())) {
+                    selected = occupied;
+                }
+            }
+        }
+        return Optional.ofNullable(selected);
+    }
+
+    private static HoldOccupancy occupation(
+            HoldOccupanciesResponse.Occupancy value, ReservationSelection selection) {
+        if (value == null
+                || !selection.date().equals(value.date())
+                || value.startTime() == null
+                || value.startTime().getNano() != 0) {
+            throw new IllegalArgumentException();
+        }
+        return switch (value.status() == null ? "" : value.status()) {
+            case "HELD" ->
+                    new HoldOccupancy(false, java.util.Objects.requireNonNull(value.expiresAt()));
+            case "CONFIRMED" -> new HoldOccupancy(true, value.expiresAt());
+            default -> throw new IllegalArgumentException();
+        };
+    }
+
+    private String accessToken() {
+        try {
+            return access.getAccess().token().value();
         } catch (IllegalStateException _) {
             throw failure(ReservationFailure.TECHNICAL_INTEGRATION_UNAVAILABLE, false, false);
         }
+    }
+
+    private HoldResponse post(String holdId, Object body, int accepted) {
+        String token = accessToken();
         try {
             var result =
                     client.post()

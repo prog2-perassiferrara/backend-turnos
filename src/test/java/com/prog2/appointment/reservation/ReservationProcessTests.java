@@ -106,7 +106,30 @@ class ReservationProcessTests {
     }
 
     @Test
-    void onlyAKnownRejectionBeforeAHoldCanReleaseTheLimit() {
+    void onlyAnUnidentifiedAttemptCanBeArchivedWithoutClaimingCentralCancellation() {
+        var uncertain =
+                creating()
+                        .recordFailure(
+                                new ReservationGatewayException(
+                                        ReservationFailure.HOLD_CREATION_UNCERTAIN, true, false),
+                                NOW);
+        assertThat(uncertain.prepareHoldRetry().phase()).isEqualTo(ReservationPhase.CREATING_HOLD);
+        var abandoned = uncertain.abandonHoldAttempt("HOLD_CREATION_UNCERTAIN", NOW);
+        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(abandoned.closedAt()).isEqualTo(NOW);
+        assertThat(abandoned.hold()).isNull();
+        assertThat(abandoned.isPending()).isFalse();
+        assertThat(abandoned.prepareHoldRetry()).isSameAs(abandoned);
+        assertThat(confirming().abandonHoldAttempt("UNKNOWN", NOW).phase())
+                .isEqualTo(ReservationPhase.CONFIRMING);
+        assertThat(
+                        abandoned.apply(
+                                action(ReservationActionType.PHONE_REQUESTED, "late-request"), NOW))
+                .isSameAs(abandoned);
+    }
+
+    @Test
+    void aKnownRejectionClosesButARejectedConfirmationKeepsItsHold() {
         var rejected =
                 creating()
                         .recordFailure(

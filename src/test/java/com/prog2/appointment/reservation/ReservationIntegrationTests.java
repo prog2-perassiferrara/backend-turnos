@@ -320,18 +320,99 @@ class ReservationIntegrationTests {
     }
 
     @Test
-    void aLostCreationResponseKeepsTheLimitAndDoesNotReplay() throws Exception {
+    void aLostCreationWithAnObservedHoldClosesOnlyTheAttemptAndRequiresAFreshCheck()
+            throws Exception {
         PROVIDERS.dropCreation.set(true);
         UUID id = UUID.randomUUID();
-        assertThat(start(id, "09:00").statusCode()).isEqualTo(503);
-        assertThat(repository.find(id).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_UNCERTAIN);
+        var response = start(id, "09:00");
+        assertThat(response.statusCode()).isEqualTo(409);
+        assertThat(body(response).path("recheckAt").asString())
+                .isEqualTo(ReservationProcessTests.HOLD.expiresAt().toString());
+        var abandoned = repository.find(id).orElseThrow();
+        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(abandoned.hold()).isNull();
+        assertThat(repository.findPending(owner)).isEmpty();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
-        var blocked = start(UUID.randomUUID(), "09:30");
-        assertThat(blocked.statusCode()).isEqualTo(409);
-        assertThat(body(blocked).path("processId").asString()).isEqualTo(id.toString());
+        assertThat(start(UUID.randomUUID(), "09:00").statusCode()).isEqualTo(409);
         assertThat(PROVIDERS.creates).hasValue(1);
+        // Es el proveedor quien libera la posición; no avanza un temporizador local de diez
+        // minutos.
+        PROVIDERS.releaseHolds();
+        PROVIDERS.dropCreation.set(false);
+        assertThat(start(UUID.randomUUID(), "09:00").statusCode()).isEqualTo(202);
+        assertThat(PROVIDERS.creates).hasValue(2);
+        assertThat(PROVIDERS.confirmations).hasValue(1);
+    }
+
+    @Test
+    void freeOccupancyAfterALostResponseAllowsOneNewAttemptWithinTheSameProcess() throws Exception {
+        PROVIDERS.createOverride.set(
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    PROVIDERS.createOverride.set(null);
+                    exchange.close();
+                });
+        UUID id = UUID.randomUUID();
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
+        assertThat(PROVIDERS.creates).hasValue(2);
+        assertThat(PROVIDERS.confirmations).hasValue(1);
+        assertThat(PROVIDERS.occupancyQueries.get()).isGreaterThanOrEqualTo(2);
+        assertThat(repository.find(id).orElseThrow().phase())
+                .isEqualTo(ReservationPhase.WAITING_FOR_REQUEST);
+    }
+
+    @Test
+    void repeatedUncertainFreeAttemptsStopAtTheBudgetAndArchiveOneProcess() throws Exception {
+        PROVIDERS.createOverride.set(
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    exchange.close();
+                });
+        UUID id = UUID.randomUUID();
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(503);
+        assertThat(PROVIDERS.creates).hasValue(3);
         assertThat(PROVIDERS.confirmations).hasValue(0);
+        assertThat(repository.find(id).orElseThrow().phase())
+                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(repository.findPending(owner)).isEmpty();
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
+        assertThat(PROVIDERS.creates).hasValue(3);
+    }
+
+    @Test
+    void aConcurrent409AfterAFreeRecheckDoesNotTriggerAnotherPost() throws Exception {
+        PROVIDERS.createOverride.set(
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    PROVIDERS.createOverride.set(null);
+                    PROVIDERS.creationStatus.set(409);
+                    exchange.close();
+                });
+        UUID id = UUID.randomUUID();
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(409);
+        assertThat(PROVIDERS.creates).hasValue(2);
+        assertThat(repository.find(id).orElseThrow().phase())
+                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+    }
+
+    @Test
+    void anUnavailableOccupancyCheckNeverAuthorizesAnotherPost() throws Exception {
+        PROVIDERS.createOverride.set(
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    PROVIDERS.occupanciesOverride.set(
+                            query ->
+                                    com.prog2.appointment.integration.TestIntegrationSupport
+                                            .respond(query, 503, "{}"));
+                    exchange.close();
+                });
+        UUID id = UUID.randomUUID();
+        var response = start(id, "09:00");
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(body(response).path("code").asString()).isEqualTo("OCCUPANCIES_UNAVAILABLE");
+        assertThat(PROVIDERS.creates).hasValue(1);
+        assertThat(repository.findPending(owner)).isEmpty();
     }
 
     @Test

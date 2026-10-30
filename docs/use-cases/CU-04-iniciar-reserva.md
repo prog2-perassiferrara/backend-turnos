@@ -30,7 +30,7 @@
 
 - **2a. Sin información vigente, referencia inválida o deshabilitada:** informa la condición y no inicia el hold.
 - **3a. Horario ocupado por una reserva u otro hold:** informa el conflicto; el usuario puede consultar disponibilidad nuevamente.
-- **3b. Timeout o respuesta perdida al crear el hold:** conserva la operación como incierta; no interpreta el timeout como rechazo ni repite a ciegas la creación. La recuperación se trata en CU-09.
+- **3b. Timeout o respuesta perdida al crear el hold, sin IDs:** conserva la intención y consulta ocupaciones. Si la posición está HELD, informa su expiresAt para esperar y reconsultar sin asumir propiedad; si está CONFIRMED, no está disponible. Si está libre, permite una nueva creación acotada, sujeta a 409. Al detener los intentos archiva localmente el intento no identificable, sin afirmar cancelación ni expiración central.
 - **3c. El usuario ya tiene un proceso pendiente o con cierre sin verificar:** informa esa condición y permite consultar el proceso existente; termina sin solicitar otro hold. Las solicitudes concurrentes tampoco permiten crear más de un proceso pendiente por usuario.
 - **5a. Hold vencido o no recuperable, horario invalidado o conflicto central:** registra el resultado conocido; no informa una reserva confirmada.
 - **5b. Respuesta perdida o confirmación inicial ya realizada:** reconcilia el resultado con CU-09 antes de repetir efectos.
@@ -46,12 +46,12 @@
 - Crear el hold y confirmar inicialmente son dos operaciones centrales, aunque respondan a una sola acción del usuario.
 - Nombre y apellido se toman de la cuenta; `externalPatientId` y propiedad se obtienen del usuario autenticado.
 - El hold no se renueva por conservarlo localmente o salir de KMP. CU-05 completa el teléfono; CU-06 informa el estado; CU-10 permite abandonar explícitamente.
-- Se permite un único proceso pendiente por usuario. Para iniciar otro, el anterior debe alcanzar un resultado verificado: confirmación, cancelación, vencimiento o fallo terminal. Una respuesta perdida, la intención de abandono o el mero vencimiento mostrado por la pantalla no liberan el límite mientras el resultado siga incierto.
+- Se permite un único proceso pendiente por usuario. Para iniciar otro, el anterior debe alcanzar un resultado verificado: confirmación, cancelación, vencimiento o fallo terminal. Una confirmación de resultado incierto, la intención de abandono o el mero vencimiento de pantalla no liberan el límite. La creación sin IDs admite el cierre local del intento y una nueva creación condicionada por ocupaciones según la aclaración docente; no acredita cancelación central.
 - Si existe una solicitud de abandono aún sin resolver, conocer que la reserva se confirmó no libera el límite: primero se verifica el resultado de esa solicitud, conforme a CU-10.
 - El límite no restringe la cantidad de reservas ya confirmadas ni las consultas de disponibilidad. Cada operación y resultado conserva su identidad de proceso; no reemplaza el historial de otro.
 
 ## Fuentes y pendientes
 
-**Fuentes:** [enunciado, sección 7](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 9, 10, 13 y 17](../../../INTEGRATION_REFERENCE-v2.md); [decisiones registradas](README.md).
+**Fuentes:** [enunciado, sección 7](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 9, 10, 13 y 17](../../../INTEGRATION_REFERENCE-v2.md); [aclaración sobre creación incierta](../../../dudas_Slack.md#duda-18-resuelta); [decisiones registradas](README.md).
 
-**Pendiente contractual/PLAN:** la recuperación de una respuesta perdida de creación requiere precisar los límites del contrato central en CU-09. La acción única de inicio fue confirmada con la aprobación del caso.
+**Decisión contractual:** la aclaración docente resuelve el tratamiento sin IDs mediante ocupaciones e intentos limitados, sin recuperar la propiedad de un hold observado. CU-09 conserva la recuperación completa de otras interrupciones. La acción única de inicio fue confirmada con la aprobación del caso.

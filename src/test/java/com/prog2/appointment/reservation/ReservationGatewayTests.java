@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -225,5 +226,91 @@ class ReservationGatewayTests {
         assertThat(settings.attempts()).isEqualTo(3);
         assertThat(settings.metadataTimeout()).isEqualTo(Duration.ofSeconds(5));
         assertThat(settings.preparationCooldown()).isEqualTo(Duration.ofSeconds(30));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HELD", "CONFIRMED"})
+    void readsTheExactSlotWithoutInferringOwnershipOrDroppingAnExpiredHeldEntry(String status) {
+        String expiry = status.equals("HELD") ? "\"2026-11-02T10:00:00Z\"" : "null";
+        providers.occupanciesOverride.set(
+                exchange -> {
+                    assertThat(exchange.getRequestURI().getRawQuery())
+                            .contains("professionalId=15", "from=2026-11-02", "to=2026-11-02");
+                    var entries =
+                            "[{\"date\":\"2026-11-02\",\"startTime\":\"09:00:00\",\"status\":\""
+                                    + status
+                                    + "\",\"expiresAt\":"
+                                    + expiry
+                                    + ",\"futureField\":true}]";
+                    com.prog2.appointment.integration.TestIntegrationSupport.respond(
+                            exchange, 200, occupancyBody(entries));
+                });
+        var occupied = gateway.findOccupancy(process.selection()).orElseThrow();
+        assertThat(occupied.confirmed()).isEqualTo(status.equals("CONFIRMED"));
+        if (status.equals("HELD")) {
+            assertThat(occupied.expiresAt())
+                    .isEqualTo(java.time.Instant.parse("2026-11-02T10:00:00Z"));
+        } else {
+            assertThat(occupied.expiresAt()).isNull();
+        }
+        assertThat(providers.creates).hasValue(0);
+    }
+
+    @Test
+    void anEmptyListIsFreeAndConfirmedTakesPrecedenceOverHeld() {
+        assertThat(gateway.findOccupancy(process.selection())).isEmpty();
+        String entries =
+                """
+                [{"date":"2026-11-02","startTime":"09:00","status":"HELD","expiresAt":"2026-11-02T11:05:00Z"},
+                 {"date":"2026-11-02","startTime":"09:00:00","status":"CONFIRMED","expiresAt":null}]
+                """;
+        providers.occupanciesOverride.set(
+                exchange ->
+                        com.prog2.appointment.integration.TestIntegrationSupport.respond(
+                                exchange, 200, occupancyBody(entries)));
+        assertThat(gateway.findOccupancy(process.selection()).orElseThrow().confirmed()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "null",
+                "[null]",
+                "[{\"date\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"HELD\"}]",
+                "[{\"date\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"PHONE_PENDING\"}]",
+                "[{\"date\":\"2026-11-03\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\"}]",
+                "[{\"date\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\",\"expiresAt\":\"2026-11-02T11:05:00Z\"}]"
+            })
+    void incompatibleOccupancyDataNeverMeansTheSlotIsFree(String entries) {
+        providers.occupanciesOverride.set(
+                exchange ->
+                        com.prog2.appointment.integration.TestIntegrationSupport.respond(
+                                exchange, 200, occupancyBody(entries)));
+        var failure =
+                assertThrows(
+                        ReservationGatewayException.class,
+                        () -> gateway.findOccupancy(process.selection()));
+        assertThat(failure.failure()).isEqualTo(ReservationFailure.OCCUPANCIES_UNAVAILABLE);
+        assertThat(providers.creates).hasValue(0);
+    }
+
+    @Test
+    void anUnauthorizedOccupancyReadRejectsOnlyTheUsedTechnicalToken() {
+        providers.occupanciesOverride.set(
+                exchange ->
+                        com.prog2.appointment.integration.TestIntegrationSupport.respond(
+                                exchange, 401, "{}"));
+        assertThrows(
+                ReservationGatewayException.class,
+                () -> gateway.findOccupancy(process.selection()));
+        verify(access).rejectAccess(providers.token);
+        assertThat(providers.occupancyQueries).hasValue(1);
+        assertThat(providers.creates).hasValue(0);
+    }
+
+    private static String occupancyBody(String entries) {
+        return "{\"professionalId\":15,\"from\":\"2026-11-02\",\"to\":\"2026-11-02\",\"occupancies\":"
+                + entries
+                + ",\"futureField\":true}";
     }
 }
