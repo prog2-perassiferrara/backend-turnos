@@ -181,9 +181,11 @@ class UserHttpTests {
                 Arguments.of("password", null), Arguments.of("password", "short"),
                 Arguments.of("password", "x".repeat(101)), Arguments.of("password", "á".repeat(101)),
                 Arguments.of("password", "🙂".repeat(101)), Arguments.of("password", "🙂".repeat(5)),
-                Arguments.of("firstName", null), Arguments.of("firstName", " "),
+                Arguments.of("firstName", null), Arguments.of("firstName", "  "),
+                Arguments.of("firstName", "A"),
                 Arguments.of("firstName", "x".repeat(51)), Arguments.of("lastName", null),
-                Arguments.of("lastName", " "), Arguments.of("lastName", "x".repeat(51)),
+                Arguments.of("lastName", "  "), Arguments.of("lastName", "L"),
+                Arguments.of("lastName", "x".repeat(51)),
                 Arguments.of("email", null), Arguments.of("email", "bad-email"),
                 Arguments.of("email", "x@x"), Arguments.of("email", "x".repeat(250) + "@example.test"),
                 Arguments.of("imageUrl", "x".repeat(257)),
@@ -203,6 +205,17 @@ class UserHttpTests {
         assertThat(count("app_user")).isZero();
         assertThat(response.body()).doesNotContain(PASSWORD, "rejectedValue", "passwordHash");
         assertThat(output).doesNotContain(PASSWORD);
+    }
+
+    @Test
+    void acceptsTwoCharacterNamesWithoutChangingThem() throws IOException, InterruptedException {
+        var body = profile("patient", "patient@example.test");
+        body.put("firstName", "Al");
+        body.put("lastName", "Li");
+        assertThat(register(body).statusCode()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT first_name FROM app_user", String.class)).isEqualTo("Al");
+        assertThat(jdbc.queryForObject("SELECT last_name FROM app_user", String.class)).isEqualTo("Li");
+        assertThat(authenticate("patient", PASSWORD, null).statusCode()).isEqualTo(200);
     }
 
     @Test

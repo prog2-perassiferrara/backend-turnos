@@ -8,9 +8,11 @@
 
 **Chequeo previo (2026-10-23):** 10 RF cubiertos por 12 CA, todos con validación en PLAN y tareas asociadas; sin alcance añadido ni decisiones bloqueantes. Repetir solo la parte afectada si cambia lo aprobado antes de implementar.
 
+**Ajuste autorizado, 2026-10-30:** nombres no blancos de 2 a 50 en registro, sin migrar ni borrar cuentas. Chequeo RF-01→CA-02→PLAN/T-10 y RF-01/CA-01 de CU-04 correcto; autorización directa del usuario, sin decisiones pendientes. Implementado y validado según E-13.
+
 ## Tareas y dependencias
 
-T-01 a T-06 corresponden a la entrega original; el ajuste vigente se ejecuta en T-07 a T-09.
+T-01 a T-06 corresponden a la entrega original; el ajuste de hashing se ejecutó en T-07 a T-09 y el de nombres se desarrolla en T-10.
 
 - [x] **T-01 · Definir contratos y hashing de contraseña**
   - **Objetivo y alcance:** modelos y puertos del slice `user`, excepciones según su responsabilidad y adaptador BCrypt con costo inicial 10. Incorporar las dependencias acordadas y wiring por constructor, sin framework en dominio ni exposición de secretos en representaciones de texto. Javadoc en español para responsabilidades y contratos.
@@ -56,6 +58,14 @@ Chequeo del ajuste RF→CA→PLAN/TASKS: RF-01/RF-03/RF-09 y CA-02/CA-04 cubren 
 - [x] **T-08 · Regresión y retirada acotada.** Fronteras ASCII/acentos/emojis/espacios, valores de 100/101 caracteres, hash corrupto y rechazo BCrypt, más procedimiento de retirada contra MySQL temporal que conserve cuentas Argon2id y no reutilice IDs. Dependencia T-07; comprobar contratos y suite completa sin usar la base de desarrollo. RF-02/RF-03/RF-06/RF-08/RF-09; CA-02/CA-04/CA-07/CA-10/CA-11.
 - [x] **T-09 · Evidencia y documentación.** README/Javadoc y estos documentos coherentes; coste local, calidad disponible, cierre por CA y límites reales. Dependencia T-08. Distinguir procedimiento de retirada comprobado en pruebas de su ejecución manual en la base de desarrollo; sin automatizar borrados, publicar ni tocar Git.
 
+## Ajuste de perfil autorizado el 2026-10-30
+
+- [x] **T-10 · Alinear nombres del registro con reservas**
+  - **Objetivo y alcance:** mínimo 2 y máximo 50 en nombre/apellido del DTO; conservar campos, endpoints, normalización, esquema y login. Mantener validación central previa al hold para cuentas existentes incompatibles; documentación de ambos CU coherente.
+  - **Dependencias:** autorización explícita del 2026-10-30.
+  - **Referencias:** RF-01/CA-02 de esta SPEC y RF-01/CA-01 de inicio de reserva; notas de ajuste en ambos PLAN.
+  - **Validación:** HTTP/MySQL temporal, un carácter rechazado sin persistir, dos/cincuenta aceptados y cincuenta y uno rechazados; registro mínimo seguido de inicio de reserva, perfil existente incompatible rechazado antes del hold. Regresión y calidad local del código afectado.
+
 ## Evidencia
 
 - **E-01, pruebas automatizadas (2026-10-23):** `./mvnw -B -ntp clean verify` terminó `BUILD SUCCESS` a las 09:20:43 -03:00, con **139 pruebas**, cero fallos, errores u omisiones. Regresión existente: 69; nuevas: `PasswordHasherTests` 9, `UserHttpTests` 56 y `UserJwtTests` 5. BCrypt y RSA reales; MySQL 8.4.8 temporal con transacciones independientes. Los fallos de firma/conexión se introducen en las fronteras de prueba, sin sustituir persistencia, commit ni validación HTTP. El escenario de dos cuentas comprueba ID y contraseña propios. Log temporal: `/tmp/turnos-user-close-verify.log`.
@@ -76,6 +86,8 @@ Chequeo del ajuste RF→CA→PLAN/TASKS: RF-01/RF-03/RF-09 y CA-02/CA-04 cubren 
 
 Los resultados de Actions/Sonar remoto se tratan como retroalimentación, identificando la revisión y separándolos de la evidencia local. No constituyen una tarea ni una condición de cierre local; cualquier defecto demostrado requiere la corrección correspondiente.
 
+- **E-13, nombres compatibles con reservas (2026-10-30):** `RegistrationRequest` exige `@NotBlank` y tamaño 2-50 en ambos nombres; sin migración ni cambios a cuentas existentes/login. Antes del cambio, 35 casos enfocados reprodujeron exactamente dos fallos: registro indebido con nombre o apellido de un carácter. Regresión limpia posterior `./mvnw -B -ntp clean verify`: 426 pruebas, cero fallos/errores/omisiones, BUILD SUCCESS a las 08:47:37 -03:00; log `/tmp/turnos-profile-names-verify.log`, resumen `/tmp/turnos-profile-names-validation.json`. Incluye 82 pruebas HTTP de usuarios y 20 de integración de reservas: acepta 2/50, rechaza 1/51 sin persistir, conserva nombres mínimos/login y permite reservar; un perfil existente incompatible sigue sin crear hold. Se ajustó después el dato de prueba de blancos a dos espacios para comprobar `@NotBlank` independientemente del mínimo: 34 casos enfocados correctos (`/tmp/turnos-profile-names-boundaries.log`), sin cambio productivo posterior al build completo. Sonar IDE sin hallazgos en los tres Java y reanálisis del fixture final limpio; CLI de secretos correcta. JaCoCo del build completo: 1574/1698 líneas (92,70 %), 622/777 ramas (80,05 %). Documentos/enlaces/diff comprobados. Sin servicios reales, Git mutable ni análisis remoto nuevo; el ensayo operativo E-12 permanece histórico y no se repitió para este ajuste.
+
 ## Cierre
 
 Se acredita el backend y sus contratos. La orquestación de las dos llamadas desde Android corresponde a KMP y no se presenta como implementada aquí.
@@ -83,7 +95,7 @@ Se acredita el backend y sus contratos. La orquestación de las dos llamadas des
 | CA | Estado | Evidencia |
 | --- | --- | --- |
 | CA-01 | Verificado, contrato HTTP | E-01/E-02: `confirmsActiveAccountBeforeAutomaticLoginAndKeepsTechnicalHealth` y secuencia operativa. |
-| CA-02 | Verificado | E-10, vigente; E-01/E-09 históricos: entradas inválidas, máximos de perfil, formatos compatibles de login y fronteras ASCII/Unicode en registro/login. |
+| CA-02 | Verificado | E-13 para nombres y E-10 para contraseña; E-01/E-09 históricos: entradas inválidas, máximos de perfil, formatos compatibles de login y fronteras ASCII/Unicode en registro/login. |
 | CA-03 | Verificado | E-01: duplicados/cruces, coincidencia propia y dos altas concurrentes contra MySQL. |
 | CA-04 | Verificado | E-10/E-11, vigente; E-01/E-05 históricos: BCrypt real, valor completo, representaciones seguras, logs y artefactos. |
 | CA-05 | Verificado | E-01: `acceptsMaximumProfileFieldsAndAssignsInternalValues` rechaza control de campos internos. |
@@ -95,9 +107,13 @@ Se acredita el backend y sus contratos. La orquestación de las dos llamadas des
 | CA-11 | Verificado | E-01: rechazo uniforme de credenciales y 503 ante fallo propio, sin JWT ni datos sensibles. |
 | CA-12 | Verificado | E-01/E-02/E-03: 24 h/30 días, reloj controlado, tolerancia de consumidor de 30 s y JWT vencido rechazado. |
 
-**Regresión:** `./mvnw -B -ntp clean verify`, 169 pruebas correctas, 2026-10-25 11:33:16 -03:00. Árbol de trabajo sin commit, sobre `1a2356fe427fa71dbdb12d9fca40e02a12bccbae`; la rama local al validar era `main`. Después del ensayo E-12, el usuario autorizó excepcionalmente avanzar la rama previa a ese mismo commit de main y trasladar el trabajo sin commit. Rama actual: `6-cu-01-registrar-usuario-e-iniciar-sesión-automáticamente`; staging vacío, main intacta y contenido de las 16 rutas comprobado contra un respaldo previo. No se crearon commits ni se hizo push. Resultado: `/tmp/turnos-argon2id-branch-move-result.json`. E-08 corresponde a una revisión publicada anterior; E-10/E-11 acreditan la migración local, sin confirmar Gate remoto nuevo.
+**Regresión vigente:** E-13, suite completa de 426 pruebas y comprobación enfocada posterior de 34 casos; publicación/feedback remoto pendientes.
+
+**Regresión de #22 (2026-10-25):** `./mvnw -B -ntp clean verify`, 169 pruebas correctas, 2026-10-25 11:33:16 -03:00. Árbol de trabajo sin commit, sobre `1a2356fe427fa71dbdb12d9fca40e02a12bccbae`; la rama local al validar era `main`. Después del ensayo E-12, el usuario autorizó excepcionalmente avanzar la rama previa a ese mismo commit de main y trasladar el trabajo sin commit. Rama al cerrar aquel ajuste: `6-cu-01-registrar-usuario-e-iniciar-sesión-automáticamente`; staging vacío, main intacta y contenido de las 16 rutas comprobado contra un respaldo previo. No se crearon commits ni se hizo push. Resultado: `/tmp/turnos-argon2id-branch-move-result.json`. E-08 corresponde a una revisión publicada anterior; E-10/E-11 acreditan la migración local, sin confirmar Gate remoto nuevo.
 
 **Paso operativo de #22 completado:** retirada real de las tres cuentas BCrypt, con respaldo y autorización explícita, según E-12. El procedimiento había sido probado en MySQL temporal (E-10); su ejecución real se acredita por separado. No se añadieron borrados al arrancar ni se reiniciaron volúmenes/IDs.
 
 
 **Desviaciones del PLAN:** los escenarios SQL/concurrencia se agruparon en `UserHttpTests` para reutilizar el contexto/MySQL y verificar la frontera HTTP real, en vez de otra clase `UserAccountPersistenceTests`; PLAN actualiza esa referencia. El adaptador también comprueba el límite antes de `matches` para proteger llamadas internas. Se añadieron las correcciones autorizadas documentadas en PLAN: timeout/recuperación de Flyway (E-06/E-07) y revisión posterior de patrón, pruebas y resolución Maven (E-09). El ajuste #22 cambia algoritmo y longitud con autorización explícita, según PLAN; no cambia tablas, contratos HTTP/JWT ni sus vigencias. La verificación del procedimiento de retirada se realizó primero con MySQL temporal; E-12 acredita su ejecución real posterior autorizada.
+
+El mínimo de nombres se ajustó por autorización explícita del 2026-10-30, según la nota de PLAN y E-13; conserva campos, endpoints y máximo de 50, incorporando el rechazo de longitud 1.

@@ -40,7 +40,18 @@ management:
       show-details: never
       show-components: never
 
+logging:
+  level:
+    org.apache.kafka.clients.consumer.ConsumerConfig: WARN
+    org.apache.kafka.clients.admin.AdminClientConfig: WARN
+
 app:
+  reservation:
+    http-timeout: ${RESERVATION_HTTP_TIMEOUT:5s}
+    metadata-timeout: ${RESERVATION_METADATA_TIMEOUT:5s}
+    attempts: ${RESERVATION_ATTEMPTS:3}
+    retry-delay: ${RESERVATION_RETRY_DELAY:5s}
+    preparation-cooldown: ${RESERVATION_PREPARATION_COOLDOWN:30s}
   availability:
     time-zone: ${AVAILABILITY_TIME_ZONE:America/Argentina/Buenos_Aires}
     http-timeout: ${AVAILABILITY_HTTP_TIMEOUT:5s}

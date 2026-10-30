@@ -9,6 +9,7 @@ import com.prog2.appointment.user.domain.exception.UserAccountUnavailableExcepti
 import com.prog2.appointment.user.domain.exception.UserIdentifierAlreadyUsedException;
 import com.prog2.appointment.user.domain.model.RegistrationData;
 import com.prog2.appointment.user.domain.model.UserAccount;
+import com.prog2.appointment.user.domain.model.UserProfile;
 import com.prog2.appointment.user.domain.ports.out.UserAccountRepository;
 import com.prog2.appointment.user.infrastructure.persistence.service.TransactionalUserAccountStore;
 
@@ -40,6 +41,12 @@ public final class JpaUserAccountAdapter implements UserAccountRepository {
         } catch (DataAccessException | TransactionException _) {
             throw new UserAccountUnavailableException();
         }
+    }
+
+    @Override
+    public Optional<UserProfile> findProfileById(long id) {
+        try { return store.findProfileById(id); }
+        catch (DataAccessException | TransactionException _) { throw new UserAccountUnavailableException(); }
     }
 
     private static boolean isDuplicateIdentifier(Throwable failure) {

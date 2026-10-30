@@ -14,8 +14,10 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import com.prog2.appointment.infrastructure.config.TechnicalAccessProperties;
 import com.prog2.appointment.user.application.usecases.AuthenticateUserUseCaseImpl;
+import com.prog2.appointment.user.application.usecases.GetUserProfileUseCaseImpl;
 import com.prog2.appointment.user.application.usecases.RegisterUserUseCaseImpl;
 import com.prog2.appointment.user.domain.ports.in.AuthenticateUserUseCase;
+import com.prog2.appointment.user.domain.ports.in.GetUserProfileUseCase;
 import com.prog2.appointment.user.domain.ports.in.RegisterUserUseCase;
 import com.prog2.appointment.user.domain.ports.out.PasswordHasher;
 import com.prog2.appointment.user.domain.ports.out.UserAccountRepository;
@@ -26,6 +28,11 @@ import com.prog2.appointment.user.infrastructure.security.SpringPasswordHasherAd
 /** Wiring del slice; utiliza privada/reloj compartidos sin acoplar los casos de uso a infraestructura. */
 @Configuration(proxyBeanMethods = false)
 public class UserConfiguration {
+    @Bean
+    GetUserProfileUseCase getUserProfileUseCase(UserAccountRepository accounts) {
+        return new GetUserProfileUseCaseImpl(accounts);
+    }
+
     @Bean
     PasswordEncoder userPasswordEncoder() {
         // Sal 16 B, hash 32 B; memoria en KiB. El perfil persistido se verifica en el adaptador.

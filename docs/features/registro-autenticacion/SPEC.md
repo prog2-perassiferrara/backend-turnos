@@ -1,12 +1,14 @@
 # SPEC: Registro y autenticación de usuarios
 
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
-**Revisión:** 2026-10-25. Se conserva la funcionalidad #6/#5 y se incorpora el ajuste de hashing y longitud de #22.
+**Revisión:** 2026-10-30. Funcionalidad #6/#5, hashing y contraseña de #22, y mínimo de nombres para reservas #9.
 **Aprobación:** explícita del usuario el 2026-10-20 («apruebo spec»), con el ajuste siguiente confirmado el 2026-10-23. Las aprobaciones y la autorización de implementación posteriores constan en PLAN/TASKS.
 
 **Ajuste confirmado, 2026-10-23:** el usuario acepta sustituir el máximo de 100 caracteres por 72 bytes UTF-8 para utilizar BCrypt como el ejemplo JHipster. Se conserva el mínimo de 6 caracteres y no se trunca la contraseña. Afecta RF-01/RF-03/RF-09, CA-02/CA-04 y sus validaciones/pruebas en PLAN. Al confirmar el ajuste aún no había TASKS ni implementación; la aprobación del PLAN fue posterior e independiente.
 
 **Ajuste autorizado, 2026-10-25, [#22](https://github.com/prog2-perassiferrara/backend-turnos/issues/22):** migrar el hashing a Argon2id y aplicar entre 6 y 100 caracteres Unicode (puntos de código), incluidos espacios, en registro/login. Sustituye la restricción anterior de 72 bytes, sin truncar, recortar ni normalizar. Retirar manualmente las cuentas ficticias BCrypt y sus datos asociados, sin compatibilidad ni rehash automático; no borrar datos al arrancar. Se reutilizan estos documentos y la rama existente. Impacta RF-01/RF-03/RF-09 y CA-02/CA-04; conserva el contrato HTTP/JWT. El usuario autorizó explícitamente implementar esta migración; las aprobaciones originales se conservan.
+
+**Ajuste autorizado, 2026-10-30:** exigir nombre y apellido no blancos de 2 a 50 caracteres al registrar, para que el perfil nuevo cumpla el mínimo central de reservas conservando el máximo y los campos del contrato compatible con JHipster. Afecta RF-01 y CA-02; se actualizan validación y pruebas de límites. Se conservan cuentas existentes, autenticación y esquema. El usuario confirmó el cambio y autorizó implementarlo directamente.
 
 <!-- PARA LA PERSONA
 SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
@@ -93,13 +95,13 @@ Trazabilidad de la entrega: CU-01/#6 comprende RF-01 a RF-05; CU-02/#5, RF-09/RF
 
 <!-- Campos, significado y reglas observables; sin diseñar clases, tablas ni algoritmos. -->
 
-Las reglas siguientes parten de la base de compatibilidad confirmada por el usuario el 2026-10-18, con los ajustes de contraseña indicados arriba. El enunciado enumera los campos, pero no contiene estos límites numéricos; la sección 5.1 del anexo regula la cuenta técnica y no los prescribe para usuarios finales.
+Las reglas siguientes parten de la base de compatibilidad confirmada por el usuario el 2026-10-18, con los ajustes indicados arriba. El enunciado enumera los campos, pero no contiene estos límites numéricos; la sección 5.1 del anexo regula la cuenta técnica y no los prescribe para usuarios finales.
 
 | Campo | Regla acordada |
 | --- | --- |
 | `login` | Obligatorio, de 1 a 50 caracteres, patrón de login del ejemplo oficial JHipster. Único sin distinguir mayúsculas. |
 | `password` | Obligatoria, entre 6 y 100 puntos de código Unicode, incluidos espacios, tanto en registro como en login. Un emoji fuera del plano básico cuenta como un carácter; no se cuentan unidades UTF-16 ni bytes. Rechazar el exceso sin truncar, recortar ni normalizar su valor. Nunca conservarla en texto plano. |
-| `firstName`, `lastName` | Obligatorios, no vacíos ni compuestos solo por espacios; máximo 50 caracteres cada uno. |
+| `firstName`, `lastName` | Obligatorios, no vacíos ni compuestos solo por espacios; de 2 a 50 caracteres cada uno. |
 | `email` | Obligatorio, válido, de 5 a 254 caracteres. Único sin distinguir mayúsculas. |
 | `imageUrl` | Opcional; máximo 256 caracteres si se informa. No requiere incorporar carga ni alojamiento de imágenes. |
 | `langKey` | De 2 a 10 caracteres si se informa; `es` si se omite. |

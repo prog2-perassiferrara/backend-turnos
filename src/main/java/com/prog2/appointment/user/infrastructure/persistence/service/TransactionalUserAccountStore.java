@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import com.prog2.appointment.user.domain.model.RegistrationData;
 import com.prog2.appointment.user.domain.model.UserAccount;
+import com.prog2.appointment.user.domain.model.UserProfile;
 import com.prog2.appointment.user.infrastructure.persistence.entity.UserAccountEntity;
 import com.prog2.appointment.user.infrastructure.persistence.mapper.UserAccountMapper;
 import com.prog2.appointment.user.infrastructure.persistence.repository.JpaUserAccountRepository;
@@ -45,5 +46,10 @@ public class TransactionalUserAccountStore {
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByIdentifier(String value) {
         return repository.findByIdentifier(value).map(mapper::toDomain);
+    }
+    /** @return perfil materializado dentro de la lectura transaccional */
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
+    public Optional<UserProfile> findProfileById(long id) {
+        return repository.findById(id).map(mapper::toProfile);
     }
 }
