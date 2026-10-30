@@ -134,13 +134,12 @@ public final class WebClientAppointmentHoldAdapter implements AppointmentHoldGat
         HoldOccupancy selected = null;
         for (var value : response.occupancies()) {
             var occupied = occupation(value, selection);
-            if (value.startTime().equals(selection.startTime())) {
-                if (selected == null
-                        || occupied.confirmed()
-                        || !selected.confirmed()
-                                && occupied.expiresAt().isAfter(selected.expiresAt())) {
-                    selected = occupied;
-                }
+            if (value.startTime().equals(selection.startTime())
+                    && (selected == null
+                            || occupied.confirmed()
+                            || !selected.confirmed()
+                                    && occupied.expiresAt().isAfter(selected.expiresAt()))) {
+                selected = occupied;
             }
         }
         return Optional.ofNullable(selected);

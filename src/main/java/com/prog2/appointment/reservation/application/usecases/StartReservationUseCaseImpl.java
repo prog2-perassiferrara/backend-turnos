@@ -139,13 +139,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
             if (process.phase() != ReservationPhase.CREATING_HOLD) {
                 return process;
             }
-            if (!isFuture(process.selection())) {
-                if (attempt > 1) {
-                    throw abandon(process, ReservationFailure.INVALID_RESERVATION_SELECTION, null);
-                }
-                throw new ReservationGatewayException(
-                        ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
-            }
+            requireFutureCreation(process, attempt);
             try {
                 var hold = holds.create(process);
                 return repository.update(process.id(), value -> value.acceptHold(hold));
@@ -160,6 +154,18 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
             }
         }
         throw abandon(process, ReservationFailure.HOLD_CREATION_UNCERTAIN, null);
+    }
+
+    /** Impide el POST fuera de horario; un reintento cierra la incertidumbre previa sin IDs. */
+    private void requireFutureCreation(ReservationProcess process, int attempt) {
+        if (isFuture(process.selection())) {
+            return;
+        }
+        if (attempt > 1) {
+            throw abandon(process, ReservationFailure.INVALID_RESERVATION_SELECTION, null);
+        }
+        throw new ReservationGatewayException(
+                ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
     }
 
     private ReservationProcess retryUnknownCreation(

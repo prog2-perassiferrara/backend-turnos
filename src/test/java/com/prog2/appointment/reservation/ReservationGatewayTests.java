@@ -182,7 +182,7 @@ class ReservationGatewayTests {
                     exchange.getResponseBody().flush();
                     try {
                         release.await(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException failure) {
+                    } catch (InterruptedException _) {
                         Thread.currentThread().interrupt();
                     } finally {
                         exchange.close();

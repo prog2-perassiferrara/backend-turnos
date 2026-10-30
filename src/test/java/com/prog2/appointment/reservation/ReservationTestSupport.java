@@ -123,7 +123,7 @@ public final class ReservationTestSupport implements AutoCloseable {
                     || !"service".equals(jwt.getJWTClaimsSet().getStringClaim("token_use"))) {
                 throw new IllegalArgumentException();
             }
-        } catch (Exception failure) {
+        } catch (Exception _) {
             credentialFailures.incrementAndGet();
             reply(exchange, 401, "{}");
             return;
