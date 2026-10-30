@@ -34,9 +34,10 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
     private final ReservationActionParser parser;
     private final ReservationProperties properties;
     private final ExecutorService executor;
-    private volatile KafkaMessageListenerContainer<String, String> container;
-    private volatile String bootstrap;
-    private volatile String topic;
+    // Referencia y configuración protegidas por el monitor de esta instancia.
+    private KafkaMessageListenerContainer<String, String> container;
+    private String bootstrap;
+    private String topic;
     private boolean preparing;
     private boolean closed;
     private long nextPreparation = System.nanoTime();
@@ -70,7 +71,10 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
     private void prepare() {
         boolean ready = false;
         try {
-            var previous = container;
+            KafkaMessageListenerContainer<String, String> previous;
+            synchronized (this) {
+                previous = container;
+            }
             if (previous != null) {
                 previous.stop();
             }
@@ -115,7 +119,7 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         return closed;
     }
 
-    private boolean isRunning() {
+    private synchronized boolean isRunning() {
         var current = container;
         return current != null && current.isRunning();
     }
@@ -174,17 +178,26 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
     @Override
     public void requireReady() {
         requestPreparation();
-        var current = container;
-        if (isClosed()
-                || current == null
+        KafkaMessageListenerContainer<String, String> current;
+        String servers;
+        String actions;
+        synchronized (this) {
+            if (closed) {
+                throw unavailable();
+            }
+            current = container;
+            servers = bootstrap;
+            actions = topic;
+        }
+        var partitions = current == null ? null : current.getAssignedPartitions();
+        if (current == null
                 || !current.isRunning()
-                || current.getAssignedPartitions() == null
-                || current.getAssignedPartitions().stream()
-                        .noneMatch(value -> value.topic().equals(topic))) {
+                || partitions == null
+                || partitions.stream().noneMatch(value -> value.topic().equals(actions))) {
             throw unavailable();
         }
         try {
-            verifyMetadata(bootstrap, topic);
+            verifyMetadata(servers, actions);
         } catch (RuntimeException _) {
             throw unavailable();
         }
@@ -231,11 +244,12 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
      */
     @Override
     public void close() {
+        KafkaMessageListenerContainer<String, String> current;
         synchronized (this) {
             closed = true;
+            current = container;
         }
         executor.shutdownNow();
-        var current = container;
         if (current != null) {
             current.stop();
         }

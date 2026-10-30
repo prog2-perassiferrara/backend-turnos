@@ -188,11 +188,12 @@ class ReservationGatewayTests {
                         exchange.close();
                     }
                 });
+        var slowGateway = gateway(Duration.ofMillis(150));
         try {
             var error =
                     assertThrows(
                             ReservationGatewayException.class,
-                            () -> gateway(Duration.ofMillis(150)).create(process));
+                            () -> slowGateway.create(process));
             assertThat(error.failure()).isEqualTo(ReservationFailure.HOLD_CREATION_UNCERTAIN);
             assertThat(error.attempted()).isTrue();
             assertThat(providers.creates).hasValue(1);
@@ -286,10 +287,11 @@ class ReservationGatewayTests {
                 exchange ->
                         com.prog2.appointment.integration.TestIntegrationSupport.respond(
                                 exchange, 200, occupancyBody(entries)));
+        var selection = process.selection();
         var failure =
                 assertThrows(
                         ReservationGatewayException.class,
-                        () -> gateway.findOccupancy(process.selection()));
+                        () -> gateway.findOccupancy(selection));
         assertThat(failure.failure()).isEqualTo(ReservationFailure.OCCUPANCIES_UNAVAILABLE);
         assertThat(providers.creates).hasValue(0);
     }
@@ -300,9 +302,8 @@ class ReservationGatewayTests {
                 exchange ->
                         com.prog2.appointment.integration.TestIntegrationSupport.respond(
                                 exchange, 401, "{}"));
-        assertThrows(
-                ReservationGatewayException.class,
-                () -> gateway.findOccupancy(process.selection()));
+        var selection = process.selection();
+        assertThrows(ReservationGatewayException.class, () -> gateway.findOccupancy(selection));
         verify(access).rejectAccess(providers.token);
         assertThat(providers.occupancyQueries).hasValue(1);
         assertThat(providers.creates).hasValue(0);
