@@ -29,6 +29,7 @@ import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
 import com.prog2.appointment.integration.domain.model.TechnicalAccess;
 import com.prog2.appointment.integration.domain.model.TechnicalToken;
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
+import com.sun.net.httpserver.HttpExchange;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -207,7 +208,7 @@ class AvailabilityClientTests {
         centralFails(central, AvailabilityFailure.OCCUPANCIES_UNAVAILABLE);
         assertThat(providers.unexpectedCalls).hasValue(0);
         providers.resetQueries();
-        providers.occupancyHandler.set(exchange -> exchange.close());
+        providers.occupancyHandler.set(HttpExchange::close);
         centralFails(central, AvailabilityFailure.OCCUPANCIES_UNAVAILABLE);
         assertThat(providers.occupancyCalls).hasValue(1);
     }

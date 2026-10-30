@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import com.prog2.appointment.availability.application.exception.AvailabilityException;
 import com.prog2.appointment.availability.domain.enums.AvailabilityFailure;
+import com.prog2.appointment.availability.domain.model.AppointmentOccupancy;
 import com.prog2.appointment.availability.domain.model.Availability;
 import com.prog2.appointment.availability.domain.ports.in.GetAvailabilityUseCase;
 import com.prog2.appointment.availability.domain.ports.out.AppointmentOccupanciesGateway;
@@ -47,7 +48,7 @@ public final class GetAvailabilityUseCaseImpl implements GetAvailabilityUseCase 
         var now = clock.instant();
         var localNow = now.atZone(zone).toLocalDateTime();
         var blocked = occupied.stream().filter(position -> position.blocksAt(now))
-                .map(position -> position.startTime()).collect(Collectors.toSet());
+                .map(AppointmentOccupancy::startTime).collect(Collectors.toSet());
         var available = candidates.stream().filter(time -> date.atTime(time).isAfter(localNow))
                 .filter(time -> !blocked.contains(time)).toList();
         return new Availability(professionalId, date, zone, available);
