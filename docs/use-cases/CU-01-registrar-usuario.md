@@ -41,7 +41,7 @@
 - El modelo y contrato deben ser compatibles con el usuario JHipster exigido por el enunciado.
 - No se requiere verificación por correo para activar la cuenta. El login automático fue acordado con el usuario.
 - Incluye CU-02: la autenticación es parte del recorrido normal del registro, aunque CU-02 también puede ejecutarse por separado. Esta relación describe comportamiento, no prescribe endpoints ni altera por sí sola el contrato de registro compatible con JHipster.
-- Los nombres de esta cuenta se utilizan como datos del paciente en CU-04.
+- Nombre y apellido son obligatorios, no blancos y de 2 a 50 caracteres cada uno; se utilizan como datos del paciente en CU-04.
 
 ## Fuentes y pendientes
 

@@ -20,8 +20,8 @@ public record RegistrationRequest(
         @Pattern(regexp = "^(?:(?>[a-zA-Z0-9!$&*+=?^_\\x60{|}~.-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*+)|(?>[_.@A-Za-z0-9-]+))$")
         String login,
         @NotNull @PasswordLength String password,
-        @NotBlank @Size(max = 50) String firstName,
-        @NotBlank @Size(max = 50) String lastName,
+        @NotBlank @Size(min = 2, max = 50) String firstName,
+        @NotBlank @Size(min = 2, max = 50) String lastName,
         @NotBlank @Email @Size(min = 5, max = 254) String email,
         @Size(max = 256) String imageUrl,
         @NotBlank @Size(min = 2, max = 10) String langKey) {

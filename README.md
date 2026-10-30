@@ -226,7 +226,7 @@ Reglas de entrada:
 - Contraseña de **6 a 100 puntos de código Unicode**, incluidos espacios, en ambos
   endpoints. Un carácter suplementario cuenta una vez, aunque ocupe dos unidades
   UTF-16 o varios bytes. El exceso se rechaza; no se trunca, recorta ni normaliza.
-- Nombre y apellido obligatorios, no blancos, hasta 50 caracteres; email válido
+- Nombre y apellido obligatorios, no blancos, de 2 a 50 caracteres; email válido
   obligatorio de 5 a 254.
 - Imagen opcional hasta 256 caracteres; no incorpora carga de archivos. Idioma
   de 2 a 10 caracteres, `es` si se omite.
