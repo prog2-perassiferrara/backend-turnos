@@ -1,0 +1,106 @@
+# TASKS: Iniciar reserva con hold y confirmación inicial
+
+**Referencias:** [SPEC aprobada](SPEC.md) y [PLAN aprobado](PLAN.md), issue #9/CU-04.
+**Estado:** Implementada y validada localmente; publicación y feedback remoto de esta revisión pendientes.
+**Aprobaciones:** SPEC, PLAN y TASKS aprobados explícitamente el 2026-10-29.
+**Autorización de implementación:** explícita del usuario el 2026-10-29 («apruebo tasks. implementa»).
+
+**Ajuste autorizado, 2026-10-30:** nombres del registro de 2 a 50, definido en [SPEC/PLAN y T-10 de registro](../registro-autenticacion/TASKS.md). La defensa de RF-01/CA-01 permanece para perfiles existentes; prueba SQL prepara ese caso sin registrarlo mediante una entrada ahora inválida. Chequeo de coherencia correcto; regresión del ajuste verificada en E-07.
+
+## Chequeo previo
+
+2026-10-29: nueve RF con CA; los diez CA tienen validación en PLAN y tareas asociadas. Dependencias sin ciclos, sin alcance nuevo y D-02/D-03 confirmadas. No quedan decisiones bloqueantes para el alcance aprobado de CU-04; se conserva el límite contractual de creación incierta sin IDs, sin prometer su recuperación completa. Las aprobaciones y la autorización posteriores constan en el encabezado.
+
+## Tareas
+
+- [x] **T-01 · Modelos propios, puertos y transiciones.**
+  - **Objetivo:** representar inicio, evidencia e incertidumbre sin dependencias externas.
+  - **Alcance:** `reservation/domain/model`, `enums`, `exception` y `ports/in|out` del PLAN; `ReservationProcessTests`. Proceso, selección/paciente, acciones y fallos propios, fases y guards de identidad/correlación, vencimiento y resultados finales. El abandono pendiente conserva exclusión, sin implementar su endpoint. Sin JPA/Jackson ni modelos de otros slices en dominio/aplicación.
+  - **Dependencias:** ninguna.
+  - **Referencias:** RF-01/RF-03 a RF-08; CA-01/CA-03/CA-04/CA-05/CA-06/CA-07/CA-09. PLAN: solución, datos y estados.
+  - **Validación:** `./mvnw -B -ntp -Dtest=ReservationProcessTests test`. Casos concretos antes/en/después del vencimiento, evento antes de REST, repetido/ajeno/tardío y resultado final. Detectar regresión a una fase anterior, renovación indebida o liberación de abandono pendiente; no calcular el esperado con el algoritmo productivo.
+
+- [x] **T-02 · Perfil y selección mediante puertos públicos.**
+  - **Objetivo:** reutilizar las reglas existentes conservando los límites de slices.
+  - **Alcance:** lectura Java `GetUserProfileUseCase`/`UserProfile` y soporte propio en `user`; adaptadores de `ReservationPatientGateway` y `ReservableSlotGateway`. Retornar perfil mínimo sin hash, validar cuenta activa/nombres y traducir CU-03 a modelos/fallos propios. No agregar endpoint de perfil ni modificar login, seguridad o internals de disponibilidad/integración; el registro solo incorpora el ajuste autorizado de nombres.
+  - **Dependencias:** T-01.
+  - **Referencias:** RF-01/RF-02/RF-08; CA-01/CA-02. PLAN: D-02 y origen de datos.
+  - **Validación:** pruebas propuestas `ReservationPublicPortsTests`, `ReservationGatewayTests` y `ReservationIntegrationTests`, con MySQL temporal para la lectura real y proveedores HTTP ficticios para CU-03. Comprobar cuenta inexistente/inactiva, nombres de uno/dos caracteres y nombres/ID exclusivamente propios. Horario no ofrecido, agenda no vigente y proveedores inaccesibles impiden el hold; no importar la excepción interna de disponibilidad ni exponer secretos.
+
+- [x] **T-03 · Persistencia, exclusión e inbox transaccionales.**
+  - **Objetivo:** conservar intención/progreso antes de efectos y proteger concurrencia e idempotencia en MySQL.
+  - **Alcance:** V3 aditiva, dos entidades/repositorios/mappers, `TransactionalReservationStore` y `JpaReservationProcessAdapter`. Unicidad del propietario activo mediante columna generada nullable, IDs centrales conocidos, clave local `requestId`, `@Version`, marca de escritura y recibos de eventos. Transacciones cortas según PLAN; no HTTP dentro de ellas ni otra tabla de bloqueos/outbox.
+  - **Dependencias:** T-01.
+  - **Referencias:** RF-03/RF-04/RF-06/RF-07/RF-08; CA-03/CA-04/CA-05/CA-06/CA-08/CA-09. PLAN: persistencia y conservación del estado.
+  - **Validación:** `./mvnw -B -ntp -Dtest=ReservationIntegrationTests test`, MySQL 8.4.8 descartable y conexiones/contextos independientes. Probar V2 poblada más V3, rollback, un solo pendiente con solicitudes solapadas, históricos y abandono pendiente. Misma clave cerrada devuelve histórico; otra selección da conflicto y horas equivalentes no lo provocan. Fallos antes/después del commit real verifican escritura propia antes de continuar, sin sustituir esa frontera por una excepción mock. Recibo y cambio de proceso se confirman juntos o ninguno.
+
+- [x] **T-04 · Clientes de hold/confirmación y configuración.**
+  - **Objetivo:** realizar cada POST central una vez con la identidad correcta y traducir resultados sin perder incertidumbre.
+  - **Alcance:** `AppointmentHoldGateway`, WebClient/DTO/adaptador propios y composición pública de `TechnicalAccessUseCase`; `ReservationProperties`, YAML y variables opcionales correspondientes. Conservar defaults/límites aprobados, URLs/clave existentes y recuperación de #4. Sin redirects/reintentos ocultos ni lectura de `.env` o privadas reales.
+  - **Dependencias:** T-01.
+  - **Referencias:** RF-04/RF-05/RF-07/RF-08; CA-04/CA-06/CA-07/CA-08. PLAN: contratos, errores y parámetros HTTP.
+  - **Validación:** `ReservationGatewayTests` y pruebas de propiedades propuestas con dos proveedores ficticios/claves efímeras. Verificar rutas, bearer, paciente/nombres, 201/202, campos adicionales compatibles y respuesta inconsistente/incompleta. Cubrir timeout/corte/cuerpo detenido después de cabeceras, 401/403/409/5xx y error sin `code`, contando un intento por POST. Distinguir fallo anterior a invocar HTTP de incertidumbre posterior; invalidar solo el JWT rechazado sin replay y sin convertir un rechazo técnico en el 401 del usuario.
+
+- [x] **T-05 · Recepción Kafka, aplicación durable y preparación del canal.**
+  - **Objetivo:** conservar los eventos de inicio y no confirmar offsets antes de sus efectos locales.
+  - **Alcance:** dependencia Kafka y Testcontainers del PLAN; `ReceiveReservationActionUseCaseImpl`, listener/decodificación y ciclo de vida/readiness en infraestructura. Configuración asignada, preparación coordinada/acotada, ACK manual, deduplicación/registro de incoherencias y parada sin descarte tras agotar intentos. Aplicar las evidencias previstas sin implementar envío/corrección del teléfono ni cancelación. Cerrar contenedor, Admin y ejecutor propios.
+  - **Dependencias:** T-01 y T-03.
+  - **Referencias:** RF-06/RF-07/RF-08/RF-09; CA-05/CA-06/CA-07/CA-09/CA-10. PLAN: recepción Kafka, estados y configuración.
+  - **Validación:** `./mvnw -B -ntp -Dtest=ReservationIntegrationTests test`, broker y MySQL temporales. Topic vacío válido, metadata/asignación fallidas, consumidor parado y presupuesto de preparación; sin creación automática de topics productivos. Comprobar key/proceso/hold/grupo, v1, adicionales compatibles, duplicados/contenido contradictorio, eventos ajenos/desconocidos y cierre final. Bloquear el commit para observar que no avanza el offset; perder el ACK/reiniciar debe deduplicar. Agotar almacenamiento fallido detiene consumo sin confirmar el registro, evitando el descarte predeterminado. Reintento propio puede solicitar preparación sin depender del broker para devolver su resultado local.
+
+- [x] **T-06 · Orquestación de inicio e idempotencia.**
+  - **Objetivo:** unir validación, persistencia y ambos POST en una sola acción del usuario.
+  - **Alcance:** `StartReservationUseCaseImpl` y errores de aplicación. Reconocer clave propia antes de revalidar una fecha que pudo pasar; rechazar otro payload/usuario. Revalidar perfil/selección/canal, confirmar cada escritura necesaria antes de continuar, releer Clock antes de los POST y preservar la versión más avanzada ante eventos. Sin replay de POST al resolver conflictos locales ni cancelación al desconectar KMP.
+  - **Dependencias:** T-02, T-03, T-04 y T-05.
+  - **Referencias:** RF-01 a RF-09; CA-01 a CA-10. PLAN: recorrido y ejecución/concurrencia.
+  - **Validación:** `./mvnw -B -ntp -Dtest=StartReservationTests test`, caso/agregado reales con puertos controlados y Clock. Observar estado durable antes de cada POST y un solo envío permitido por la inserción propia confirmada. Probar clave repetida durante/después del cierre, paso del tiempo antes de crear/confirmar, eventos intercalados, límites de conflicto local y fallos de escritura/verificación. Un fallo sin IDs no crea otra reserva; rechazo de confirmación o mero reloj alcanzado no resuelven efectos inciertos.
+
+- [x] **T-07 · API protegida y recorrido concurrente.**
+  - **Objetivo:** exponer el inicio acordado sin alterar seguridad o datos de otros usuarios.
+  - **Alcance:** controlador/DTO/mapper/advice propios, wiring e integración de colaboradores. `POST /api/reservation-processes`, `requestId` obligatorio, 202 nuevo/200 repetición propia, códigos/errores y `no-store` del PLAN. La identidad procede del `sub`, sin nuevos GET ni endpoints de teléfono/abandono. Constructor DI; pruebas Spring con entrega de dependencias al constructor.
+  - **Dependencias:** T-06.
+  - **Referencias:** RF-01 a RF-09; CA-01 a CA-10. PLAN: contrato HTTP y validación.
+  - **Validación:** `ReservationIntegrationTests`, servidor real, MySQL/Kafka temporales, registro/login reales y POST centrales ficticios observables. Coordinar duplicados del mismo usuario y competencia entre dos usuarios mediante barreras. Entregar el evento antes de liberar el 202: no debe retroceder WAITING_FOR_PHONE. Comprobar errores 400/401/403/409/503 sin secretos/cuerpos privados, clave ajena sin filtración, Kafka no preparado sin hold y repetición histórica sin nuevos efectos. Reiniciar con la misma DB y offsets conserva progreso/exclusión y permite deduplicar sin recreación.
+
+- [x] **T-08 · Regresión, ejecución aislada y cierre.**
+  - **Objetivo:** verificar todos los CA y documentar el contrato/ejecución implementados.
+  - **Alcance:** suite completa, README/Javadoc, configuración Compose, artefacto y calidad local disponible. Ensayo JAR/Compose de Turnos con MySQL/Kafka descartables y HTTP ficticio; evidencia/cierre de este documento. Sin cambios en Catálogo/KMP ni nuevas capacidades de otros CU.
+  - **Dependencias:** T-07.
+  - **Referencias:** RF-01 a RF-09; CA-01 a CA-10. PLAN: regresiones, operación y límites.
+  - **Validación:** `./mvnw -B -ntp clean verify`; revisar pruebas descubiertas/omisiones, JaCoCo, Javadoc, `git diff --check` y JAR sin `.env`, claves o fixtures de test. Conservar registro/login, JWT/CORS, acceso técnico y CU-03, sin requerir broker central para pruebas. Ensayo aislado de dos POST, evento anticipado y reinicio/offset; retirar solo recursos efímeros propios. Consultar Sonar CLI/IDE comprobando disponibilidad y conexión, sin reintentar el Vortex 403 conocido ni afirmar análisis no ejecutados. Registrar CA/evidencia, regresión y desviaciones reales.
+
+Las pruebas SQL/HTTP/Kafka y de concurrencia se concretaron en `ReservationIntegrationTests`; las suites específicas conservan sus responsabilidades. Los resultados ejecutados se registran abajo. La unidad de commit es un cambio coherente, no necesariamente cada tarea. Git/publicación corresponden al usuario. Actions/Sonar remotos aportan feedback posterior; no hay una tarea de esperar aprobación o Quality Gate.
+
+## Evidencia
+
+- **E-02, regresión final (2026-10-30, base f0e452d más cambios locales):** `./mvnw -B -ntp clean verify`, BUILD SUCCESS a las 07:42:28 -03:00. 422 pruebas, cero fallos/errores/omisiones: 341 existentes y 81 de reservas (14 agregado, 9 caso de uso, 18 gateways/configuración, 15 parser, 6 composición pública, 19 integración). MySQL 8.4.8 y Kafka 3.8.0 descartables, proveedores HTTP ficticios, sin `.env` ni servicios centrales. JaCoCo XML/HTML: 1574/1698 líneas (92,70 %) y 622/777 ramas (80,05 %). Log local `/tmp/turnos-reservation-verify-final.log`; resumen `/tmp/turnos-reservation-validation-final.json`.
+- **E-03, concurrencia e integración incluidas en E-02:** API con registro/login reales, nombres/identidad propios, repetición durante ejecución y tras cierre, clave ajena sin filtración, dos solicitudes del mismo usuario y dos usuarios compitiendo por horario. Commit JDBC real antes/después de fallar; evento Kafka anticipado al 202, duplicado y ajeno; commit de inbox bloqueado sin avance del offset, agotamiento de fallos con grupo detenido y posterior redelivery sin descarte. Confirmación rechazada e incertidumbre conservan exclusión; la columna generada mantiene abandono pendiente incluso tras confirmación. Las regresiones de CU-03 cubren vigencia, flags y cálculo reutilizado por el adaptador.
+- **E-04, calidad y artefacto (2026-10-30):** Sonar IDE analizó 60 Java del cambio, sin hallazgos finales; reanálisis de los dos fixtures ajustados también limpio. Sonar CLI 1.10 autenticada en la organización prevista, revisión de secretos correcta sobre los 60 Java y sobre configuración nueva. No se repitió el Vortex 403 conocido ni se presenta como análisis Java CLI satisfactorio. Javadoc de 46 Java productivos nuevos, sin avisos; JAR con V3 y sin `.env`, claves ni fixtures/sonda de test. Modelo Compose verificado con entorno ficticio explícito: cinco defaults y solo servicios MySQL/Turnos; no inicia contenedores ni lee `.env` personal. Sin dependencias externas en dominio/aplicación, `@Autowired` o `@Data` nuevos; `git diff --check` correcto.
+- **E-05, referencia remota anterior a CU-04 (2026-10-30):** [Actions de main](https://github.com/prog2-perassiferrara/backend-turnos/actions/runs/40979223654) sobre f0e452d: SUCCESS; logs con 341 pruebas correctas y análisis publicado. Quality Gate de main consultado por CLI: OK. Esta evidencia corresponde a la base; no acredita análisis remoto de los cambios locales ni publicación/merge de #9.
+
+- **E-01, preparación documental (2026-10-29):** SPEC y PLAN aprobados, D-02/D-03 confirmadas y tareas derivadas con cobertura documental de nueve RF/diez CA, dependencias, enlaces y límites. No se implementó, compiló, probó ni ensayó CU-04 durante este desglose.
+
+- **E-06, JAR aislado (2026-10-30):** 24 comprobaciones correctas, cuatro arranques del mismo artefacto con MySQL/Kafka descartables y dos proveedores HTTP ficticios. Se aplicó V3 sobre V2 poblada, conservando login Argon2id de una cuenta previa. Inicio 202 con ambos POST una vez, repetición 200 normalizada, recepción/duplicado tras reinicio, conservación de WAITING_FOR_PHONE y exclusión, reentrega con recibos durables y offset del grupo atrasado sin incrementar la versión ni duplicar el recibo, vencimiento central y creación incierta sin IDs conservada en otro reinicio. Con Kafka detenido, otra cuenta recibe 503 sin nuevo hold; cero credenciales cruzadas. El offset se atrasó administrativamente solo en el broker descartable para reproducir el estado de un ACK perdido; la repetición propia solicitó preparación a demanda sin nuevos POST. Solo dos intenciones persistidas y ningún efecto en cátedra real. Recursos propios cerrados y clave efímera eliminada, sin tocar Compose/servicios personales. Resultado local `/tmp/turnos-reservation-runtime-result.json`, logs `/tmp/turnos-reservation-runtime.log` y `/tmp/turnos-reservation-runtime-harness.log`; script externo `/tmp/ReservationRuntimeProbe.java`. Esta evidencia precede al ajuste de nombres del registro; su regresión posterior se registra por separado.
+
+- **E-07, regresión del perfil (2026-10-30):** [E-13 de registro](../registro-autenticacion/TASKS.md) acredita 426 pruebas completas correctas, 34 casos enfocados posteriores y calidad local limpia. Las 20 pruebas de `ReservationIntegrationTests` incluyen registro de un nombre mínimo válido seguido de hold/confirmación inicial, y perfil existente incompatible preparado en MySQL temporal, rechazado antes de cualquier hold. RF-01/CA-01 conservan propiedad/defensa; el registro ya exige 2-50. El JAR se recompiló con el nuevo DTO; E-06 sigue siendo ensayo histórico de la revisión anterior, sin repetición ni efectos en cátedra real.
+
+## Cierre
+
+| CA | Estado | Tarea y evidencia |
+| --- | --- | --- |
+| CA-01 | Verificado localmente | T-01/T-02/T-06/T-07; E-02/E-03/E-07: perfil, autorización, identidad y clave ajena. |
+| CA-02 | Verificado localmente | T-02/T-06/T-07; E-02/E-03: reutilización efectiva de CU-03, flags/vigencia y horario futuro. |
+| CA-03 | Verificado localmente | T-01/T-03/T-06/T-07; E-03/E-06: concurrencia, idempotencia, históricos, reinicio y abandono pendiente en SQL. |
+| CA-04 | Verificado localmente | T-01/T-03/T-04/T-06/T-07; E-02/E-03/E-06: intención/IDs antes de POST, mismo paciente y aceptación pendiente. |
+| CA-05 | Verificado localmente | T-01/T-03/T-05/T-06/T-07; E-03/E-06: Kafka antes del 202, duplicados, eventos ajenos/tardíos y estado monotónico. |
+| CA-06 | Verificado localmente | T-01/T-03/T-04/T-05/T-06/T-07; E-02/E-03/E-06: HTTP incierto/rechazado y fallos reales de commit, sin replay ni liberación. |
+| CA-07 | Verificado localmente | T-01/T-04/T-05/T-06/T-07; E-02/E-06: límites del reloj, vencimiento central, sin renovación ni reapertura. |
+| CA-08 | Verificado localmente | T-03/T-04/T-06/T-07; E-03: dos propietarios compiten y el rechazo posterior al hold no libera exclusión. |
+| CA-09 | Verificado localmente | T-01/T-03/T-05/T-06/T-07; E-03/E-06: progreso/IDs/inbox y límite conservados tras reinicios; sin recreación automática. |
+| CA-10 | Verificado localmente | T-05/T-06/T-07; E-03/E-06: topic vacío preparado, broker caído antes de un nuevo hold y commit anterior al ACK. |
+
+**Regresión:** E-07 acredita la revisión vigente (426 pruebas completas y 34 casos enfocados posteriores). E-02 conserva registro/login, Argon2id, JWT/CORS, integración técnica y disponibilidad; 422 pruebas correctas, cero omisiones. E-04 comprueba calidad local/configuración/artefacto y E-06 el proceso Java real con servicios ficticios. E-05 es únicamente referencia remota de la base. La publicación y el análisis remoto de este cambio corresponden al siguiente paso del usuario; no se declara cerrado/mergeado el issue.
+
+**Límites:** no se ensayaron holds, publicación de eventos ni reservas contra cátedra real. Esa prueba necesita autorización separada y no se acredita con proveedores ficticios. Teléfono, abandono/cancelación, consulta de progreso y recuperación remota completa conservan sus CU; la creación incierta sin IDs sigue sin una consulta/idempotencia central contractual para resolverla automáticamente.
+
+**Desviaciones del PLAN:** concreción interna documentada en PLAN: retorno `StartResult` evita una carrera al distinguir 202/200; métodos del repositorio y receptor/contenedor Kafka adoptan sus nombres definitivos, y la integración se concentra en una suite. No cambian comportamiento, RF/CA, contrato HTTP, dos tablas, dependencias aprobadas ni alcance. El ensayo operativo usa JAR, una de las alternativas previstas; Compose se verificó como modelo sin tocar el entorno personal.

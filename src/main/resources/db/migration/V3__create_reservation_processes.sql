@@ -1,0 +1,52 @@
+CREATE TABLE reservation_process (
+    id VARCHAR(36) NOT NULL,
+    owner_id BIGINT NOT NULL,
+    professional_id BIGINT NOT NULL,
+    appointment_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    patient_first_name VARCHAR(100) NOT NULL,
+    patient_last_name VARCHAR(100) NOT NULL,
+    phase VARCHAR(40) NOT NULL,
+    hold_id VARCHAR(255),
+    central_process_id VARCHAR(255),
+    expires_at TIMESTAMP(6) NULL,
+    request_event_id VARCHAR(255),
+    reservation_id BIGINT,
+    reason_code VARCHAR(64),
+    version BIGINT NOT NULL,
+    write_id VARCHAR(36) NOT NULL,
+    closed_at TIMESTAMP(6) NULL,
+    abandonment_pending BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    -- La exclusión se deriva del cierre; el cliente no puede liberarla con otro campo.
+    active_owner_id BIGINT GENERATED ALWAYS AS
+        (CASE WHEN closed_at IS NULL OR abandonment_pending THEN owner_id ELSE NULL END) STORED,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_reservation_owner FOREIGN KEY (owner_id) REFERENCES app_user(id),
+    CONSTRAINT uk_reservation_active_owner UNIQUE (active_owner_id),
+    CONSTRAINT uk_reservation_hold UNIQUE (hold_id),
+    CONSTRAINT uk_reservation_central_process UNIQUE (central_process_id),
+    CONSTRAINT ck_reservation_owner CHECK (owner_id > 0),
+    CONSTRAINT ck_reservation_professional CHECK (professional_id > 0),
+    INDEX ix_reservation_owner (owner_id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
+
+CREATE TABLE reservation_inbox (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    topic VARCHAR(249) NOT NULL,
+    partition_number INT NOT NULL,
+    record_offset BIGINT NOT NULL,
+    message_key VARCHAR(255),
+    event_id VARCHAR(255),
+    process_id VARCHAR(36),
+    fingerprint CHAR(64) NOT NULL,
+    payload MEDIUMTEXT NOT NULL,
+    outcome VARCHAR(32) NOT NULL,
+    rejection VARCHAR(64),
+    received_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_reservation_delivery UNIQUE (topic, partition_number, record_offset),
+    CONSTRAINT uk_reservation_event UNIQUE (event_id),
+    CONSTRAINT fk_reservation_receipt_process FOREIGN KEY (process_id) REFERENCES reservation_process(id)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;

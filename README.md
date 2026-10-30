@@ -10,7 +10,7 @@ Detalle completo en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 Base técnica con Java 25, Spring Boot 4.1.1, Maven Wrapper 3.10.0,
 MySQL 8.4.8, JPA/Hibernate y Flyway. Incluye acceso técnico a cátedra mediante
 el contrato protegido de Catálogo, registro/login de usuarios, protección JWT transversal,
-consulta de disponibilidad, health y pruebas de integración. Procesos y reservas conservan sus issues.
+consulta de disponibilidad, inicio de reservas con hold, health y pruebas de integración.
 
 ## Requisitos
 
@@ -49,6 +49,11 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
 | `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
 | `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
+| `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de creación y confirmación del hold, `5s`; total por POST de `10s`. Sin repetición automática. |
+| `RESERVATION_METADATA_TIMEOUT` | Opcional, espera de metadata Kafka, `5s`. |
+| `RESERVATION_ATTEMPTS` | Opcional, presupuesto de preparación/recepción, `3` intentos en total; admite 1 a 10. No reintenta los POST centrales. |
+| `RESERVATION_RETRY_DELAY` | Opcional, pausa entre intentos Kafka, `5s`. |
+| `RESERVATION_PREPARATION_COOLDOWN` | Opcional, espera mínima tras agotar preparación, `30s`; un nuevo inicio/reintento puede solicitar otro ciclo. |
 
 Los puertos por defecto difieren de Catálogo (8080/3306) para ejecutar ambos juntos.
 Si están ocupados, cambiarlos en `.env`. Los contenedores de Turnos utilizan su propia
@@ -428,6 +433,61 @@ ejecución de Actions, importación en Sonar ni estado del Gate. Consultar
 y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 [issue #17](https://github.com/prog2-perassiferrara/backend-turnos/issues/17).
 
+## Iniciar una reserva
+
+`POST /api/reservation-processes` requiere un JWT de usuario. El cliente genera un
+UUID `requestId` por acción y lo conserva al reintentar la misma selección:
+
+```json
+{
+  "requestId": "b7273764-9bc3-43fd-b42c-8a9ca65c5639",
+  "professionalId": 15,
+  "date": "2026-11-02",
+  "startTime": "09:00"
+}
+```
+
+Los valores son ficticios; consultar primero la disponibilidad vigente. Turnos toma
+el paciente y los nombres de la cuenta autenticada, comprueba perfil, horario y canal
+Kafka antes del hold, y ejecuta creación y confirmación inicial REST en una sola acción.
+La confirmación inicial no significa que la reserva esté confirmada: el proceso espera
+la solicitud de teléfono. Su envío/corrección y la cancelación tienen sus propios CU.
+
+Un inicio nuevo devuelve `202`; la repetición propia, `200` con el estado persistido,
+incluso después del cierre, sin repetir los POST. Ambos usan `Cache-Control: no-store`
+y devuelven `processId` (el `requestId` local), profesional, fecha, hora `HH:mm:ss`,
+`state`, `expiresAt` y `reasonCode` opcionales. No exponen JWT ni IDs técnicos centrales.
+Reutilizar la clave con otra selección o usuario produce `409 REQUEST_ID_CONFLICT`,
+sin revelar el proceso ajeno. Otra clave del mismo propietario mientras hay un
+pendiente produce `409 ACTIVE_RESERVATION_PROCESS` con la referencia local propia.
+
+Un perfil incompatible o selección inválida produce `400`; la competencia por el
+horario produce `409`; proveedores, almacenamiento o mensajería inaccesibles, `503`.
+Los errores usan `application/problem+json` y `code`; no interpretar `detail`.
+El registro exige nombres de 2 a 50 caracteres, compatibles con el mínimo central
+y el máximo del modelo JHipster. Reservas conserva la validación central de 2 a 100
+para impedir holds con perfiles existentes incompatibles.
+
+V3 conserva intención, propietario, selección y progreso antes de cada efecto remoto.
+MySQL impone un solo pendiente por usuario y permite históricos. Kafka utiliza la
+configuración asignada por cátedra, sin crear topics productivos: debe ser accesible
+desde Turnos y haber asignación del consumidor para admitir nuevos holds. Un topic
+vacío es válido. La preparación es acotada al arranque y a demanda; health sigue
+siendo técnico. El presupuesto agotado al guardar un mensaje detiene el consumo sin
+descartarlo; otro intento puede preparar el canal de nuevo.
+
+El inbox confirma los efectos y el recibo antes del offset; deduplica por `eventId`
+y conserva mensajes incoherentes o aún no correlacionados. Un evento recibido antes
+de la respuesta REST prevalece y no reinicia el plazo. La base y los offsets permiten
+conservar el progreso tras reinicios; este CU no ejecuta recuperación remota completa.
+Un timeout no libera el proceso ni habilita repetir un POST. Si se pierde la respuesta
+de creación sin conocer IDs centrales, queda `HOLD_UNCERTAIN`: el contrato no ofrece
+consulta de holds ni idempotencia de creación para resolverlo automáticamente.
+Desconectar el cliente tampoco cancela el proceso.
+
+Contrato y diseño: [SPEC](docs/features/inicio-reserva/SPEC.md),
+[PLAN](docs/features/inicio-reserva/PLAN.md) y [TASKS](docs/features/inicio-reserva/TASKS.md).
+
 ## Archivos y responsabilidades
 
 - `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot; JaCoCo genera cobertura y SonarScanner publica el análisis.
@@ -444,7 +504,7 @@ y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 - Clientes HTTP de `integration/infrastructure/client/adapter/`: patrón Adapter para los dos contratos salientes, separados por proveedor.
 - `InMemoryTechnicalAccessAdapter`: patrón Repository, con sesión/invalidación/cierre atómicos y huellas de tokens rechazados, sin tablas.
 - `TechnicalAccessRecoveryAdapter`: coordina executor, intentos y espera entre ciclos; son mecanismos de ejecución, sin agregar un patrón de negocio.
-- `user/domain/ports/` y los dos casos de uso de `user/application/usecases/`: contratos y coordinación de alta/autenticación sin dependencias de JPA o HTTP.
+- `user/domain/ports/` y los casos de uso de `user/application/usecases/`: alta/autenticación y lectura mínima de perfil para otros slices, sin dependencias de JPA o HTTP.
 - `JpaUserAccountAdapter` y `TransactionalUserAccountStore`: Adapter/Repository y límite transaccional; el proxy confirma antes de que el adaptador devuelva el alta o traduzca un fallo.
 - `UserAccountEntity`, `JpaUserAccountRepository` y `UserAccountMapper`: persistencia propia y conversión a dominio; identificadores y autoridades son conjuntos de valores.
 - `SpringPasswordHasherAdapter`, `NimbusUserTokenIssuerAdapter` y `UserConfiguration`: hashing, firma y wiring del slice con clave/reloj externos; conservan el firmante técnico existente.
@@ -454,11 +514,18 @@ y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 - Los adaptadores HTTP de `availability/infrastructure/client/`: patrón Adapter para los contratos de Catálogo y cátedra; solo el de ocupaciones compone el puerto público de integración.
 - `AvailabilityProperties` y `AvailabilityConfiguration`: defaults externos validados, reloj y clientes con destinos/presupuestos separados, sin cabecera bearer global.
 - `AvailabilityController`, su mapper y `AvailabilityProblemHandler`: contrato de consulta protegido y errores propios, sin persistencia o administración de reservas.
+- `ReservationProcess` y sus puertos: identidad, transiciones y contratos de inicio/recepción, sin dependencias externas.
+- `StartReservationUseCaseImpl`: coordina validación, intención durable y ambos POST, preservando idempotencia e incertidumbre.
+- `TransactionalReservationStore` y `JpaReservationProcessAdapter`: transacciones cortas, exclusión SQL, versión, verificación de escritura y recibo/cambio indivisibles.
+- `ReservationKafkaChannel` y `ReservationActionParser`: preparación del consumidor, frontera v1, aplicación durable y ACK posterior a MySQL.
+- Adaptadores de `reservation/infrastructure/`: componen los puertos públicos de perfil, disponibilidad y acceso técnico; el cliente HTTP no repite efectos automáticamente.
+- `ReservationController`, DTO, mapper y advice: API de inicio y errores con referencias exclusivamente propias.
 
 Flyway es el único responsable de cambiar el esquema; Hibernate usa `ddl-auto=validate`.
 `V2__create_users.sql` crea cuentas, identificadores y autoridades en
 `src/main/resources/db/migration/`. V1 es una sonda exclusiva de pruebas;
 no se empaqueta en producción. No editar una migración ya aplicada.
+`V3__create_reservation_processes.sql` agrega procesos e inbox de reservas.
 
 El paquete base es `com.prog2.appointment`. Las funcionalidades futuras respetarán
 dominio, aplicación e infraestructura según la estructura acordada; no se generan slices vacíos.

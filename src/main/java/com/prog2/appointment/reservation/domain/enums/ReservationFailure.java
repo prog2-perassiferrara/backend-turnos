@@ -1,0 +1,20 @@
+package com.prog2.appointment.reservation.domain.enums;
+
+/** Motivos propios seguros; nunca incluyen cuerpos, nombres o credenciales externas. */
+public enum ReservationFailure {
+    INVALID_RESERVATION_SELECTION,
+    PROFILE_NOT_RESERVABLE,
+    SLOT_NOT_AVAILABLE,
+    ACTIVE_RESERVATION_PROCESS,
+    REQUEST_ID_CONFLICT,
+    CATALOG_UNAVAILABLE,
+    TECHNICAL_INTEGRATION_UNAVAILABLE,
+    MESSAGING_NOT_READY,
+    STORAGE_UNAVAILABLE,
+    HOLD_CREATION_UNCERTAIN,
+    CONFIRMATION_UNCERTAIN,
+    HOLD_EXPIRED,
+    CONFIRMATION_REJECTED,
+    CORRELATION_MISMATCH,
+    INTERNAL_ERROR
+}
