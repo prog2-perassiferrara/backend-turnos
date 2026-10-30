@@ -4,7 +4,7 @@
 **Versión de la spec revisada:** 2026-10-29, aprobación explícita del usuario; 7 RF y 8 CA.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** explícita del usuario el 2026-10-29. Autoriza derivar TASKS, no implementar.
-**Alcance de esta etapa:** PLAN aprobado; TASKS pendientes de revisión y autorización de implementación.
+**Alcance de esta etapa:** PLAN y TASKS aprobados; implementación autorizada explícitamente el 2026-10-29.
 
 <!-- PARA LA PERSONA
 Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
@@ -120,7 +120,7 @@ Las rutas siguientes parten de `src/main/java/com/prog2/appointment/`; todas las
 | `availability/domain/ports/out/` | Crear | `ProfessionalAgendaGateway` y `AppointmentOccupanciesGateway`, con modelos propios. | RF-02/RF-04/RF-07 |
 | `availability/domain/enums/` y `domain/exception/` | Crear | Estados de ocupación, motivos tipados y `AvailabilityGatewayException` sin HTTP/Jackson. | RF-04/RF-06 |
 | `availability/application/usecases/` y `application/exception/` | Crear | Un caso de uso y `AvailabilityException` para rechazos de aplicación. | RF-01 a RF-07 |
-| `availability/infrastructure/client/{adapter,dto}/` | Crear | Dos adaptadores y DTO externos mínimos; validar y traducir en esta frontera. | RF-02/RF-04/RF-06/RF-07 |
+| `availability/infrastructure/client/` | Crear | Dos adaptadores, DTO externos mínimos y GET común acotado; validar y traducir en esta frontera. | RF-02/RF-04/RF-06/RF-07 |
 | `availability/infrastructure/web/{controller,dto,mapper}/` | Crear | Un GET, respuesta propia y mapper manual. | RF-01/RF-05 |
 | `availability/infrastructure/web/AvailabilityProblemHandler` | Crear | Errores limitados al controlador de disponibilidad. | RF-01/RF-06 |
 | `availability/infrastructure/config/AvailabilityConfiguration` | Crear | Construir colaboradores, clientes y adaptadores por constructor. | RF-01/RF-06/RF-07 |
@@ -182,6 +182,7 @@ con el proyecto y justifica las incorporaciones. No agregues dependencias por de
 
 - Reutilizar Java 25, Boot 4.1.1, MVC, WebClient/Reactor Netty, Bean Validation y pruebas ya presentes en `pom.xml`; no añadir librerías. `SafeIntegrationHttpClient` tiene clasificación propia de #4 y vive en sus internals: conservarlo sin extraerlo ni modificarlo para esta consulta. Los nuevos adaptadores necesitan interpretar ausencia/vigencia de Catálogo y ocupaciones, contratos diferentes.
 - `AvailabilityConfiguration` construye dos clientes con destinos existentes y bearer por petición, sin cabecera de autorización global ni propagación del JWT entrante. Compartir el armado de transporte en la configuración, sin crear un framework HTTP: redirects y reintentos automáticos desactivados; respuesta completa dentro de un límite total.
+- **Ajuste de implementación, 2026-10-29:** `AvailabilityHttpClient` concentra el GET/decodificación/presupuesto total de ambos adaptadores para evitar duplicar ese manejo. Cada adaptador conserva su clasificación HTTP/code y mapeo. No se extrae ni modifica el cliente de #4, no cambian RF/CA ni contratos; cubierto por `AvailabilityClientTests`.
 - Propiedades nuevas en `application.yaml`: `app.availability.time-zone=${AVAILABILITY_TIME_ZONE:America/Argentina/Buenos_Aires}` y `app.availability.http-timeout=${AVAILABILITY_HTTP_TIMEOUT:5s}`. El timeout aplica a conexión/lectura y el total por proveedor es su doble, como en #4; dos proveedores secuenciales tienen como máximo dos presupuestos de diez segundos con los defaults, más procesamiento local. No hay espera de recuperación añadida.
 - Validar `ZoneId` y duración positiva/representable al arrancar, con diagnóstico del parámetro sin secretos. `.env.example` documenta valores opcionales y Compose los pasa con default; no modificar `.env` real, claves, puertos ni servicios del usuario. Configuración por arranque, sin recarga dinámica ni externalizar constantes ajenas a #8.
 - **D-03, aceptada en la revisión del 2026-10-29:** puerto propio de ocupaciones y adaptador consumidor del puerto público de integración. Ese es el único punto de composición entre slices; no acceder a repositorio/estado interno ni trasladar la gestión JWT al cálculo.
@@ -240,7 +241,7 @@ Incluye puntos de comprobación para avanzar con cambios pequeños. -->
 Escribe Ninguna en las decisiones pendientes cuando estén resueltas. -->
 
 - **Riesgos y medidas acordadas:** datos de dos servicios sin atomicidad, disponibilidad informativa y nueva validación en CU-04; identificadores/horas/respuestas validados antes de usarlos. Inicios que pasan durante HTTP y holds vencidos se evalúan con un instante final consistente. Fallos de proveedores o JWT técnico producen indisponibilidad, nunca horarios falsamente libres. Ningún GET crea o extiende un hold. Una fecha futura válida no se rechaza por un horizonte propio inventado; la consulta sigue siendo de un solo día.
-- **Decisiones pendientes:** Ninguna. D-01/D-02 están aprobadas en la SPEC; D-03 acepta la composición mediante puerto/adaptador y D-04 posterga Swagger. El usuario aprobó el PLAN completo, incluidos ruta, respuesta, códigos y parámetros. La implementación requiere autorización posterior explícita.
+- **Decisiones pendientes:** Ninguna. D-01/D-02 están aprobadas en la SPEC; D-03 acepta la composición mediante puerto/adaptador y D-04 posterga Swagger. El usuario aprobó el PLAN completo, incluidos ruta, respuesta, códigos y parámetros, y posteriormente TASKS y su implementación.
 
 <!-- ANTES DE SOLICITAR APROBACIÓN
 Comprueba que el plan cubre los requisitos, respeta las exclusiones, reutiliza

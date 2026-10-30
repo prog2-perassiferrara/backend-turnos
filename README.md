@@ -10,7 +10,7 @@ Detalle completo en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 Base técnica con Java 25, Spring Boot 4.1.1, Maven Wrapper 3.10.0,
 MySQL 8.4.8, JPA/Hibernate y Flyway. Incluye acceso técnico a cátedra mediante
 el contrato protegido de Catálogo, registro/login de usuarios, protección JWT transversal,
-health y pruebas de integración. Disponibilidad, procesos y reservas conservan sus issues.
+consulta de disponibilidad, health y pruebas de integración. Procesos y reservas conservan sus issues.
 
 ## Requisitos
 
@@ -47,6 +47,8 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CATEDRA_GROUP_ID` | Identificador normalizado de la integración esperada; no es un paciente. |
 | `JWT_PRIVATE_KEY_PATH` | Archivo externo PKCS#8 de privada RSA, al menos 2048 bits. En Compose es la ruta del host que se monta dentro del contenedor. |
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
+| `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
+| `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
 
 Los puertos por defecto difieren de Catálogo (8080/3306) para ejecutar ambos juntos.
 Si están ocupados, cambiarlos en `.env`. Los contenedores de Turnos utilizan su propia
@@ -309,6 +311,57 @@ servicio fuera de ese entorno. Este issue no instala certificados ni proxy.
 Ver [SPEC](docs/features/seguridad-jwt/SPEC.md),
 [PLAN](docs/features/seguridad-jwt/PLAN.md) y [TASKS](docs/features/seguridad-jwt/TASKS.md).
 
+## Consultar disponibilidad
+
+`GET /api/appointment-availability?professionalId=15&date=2026-11-02` requiere
+JWT de usuario y `ROLE_USER`. Recibe un ID positivo y una fecha `yyyy-MM-dd`
+desde hoy, sin horizonte máximo futuro adicional. Respuesta `200`, `no-store`:
+
+```json
+{
+  "professionalId": 15,
+  "date": "2026-11-02",
+  "timeZone": "America/Argentina/Buenos_Aires",
+  "availableStartTimes": ["09:00:00", "09:30:00"]
+}
+```
+
+Consulta profesional, agendas y vigencia conjuntamente a Catálogo con el JWT de
+servicio existente. Aplica las agendas habilitadas del día y su duración, sin
+ofrecer turnos incompletos al cierre. Consulta las ocupaciones centrales del mismo
+profesional con `from` y `to` iguales a la fecha solicitada, usando el JWT central
+obtenido mediante #4. No persiste ni cachea agenda/ocupaciones y no crea holds.
+
+Devuelve inicios ordenados y sin duplicados, excluyendo confirmaciones y holds
+aún no vencidos (`expiresAt` UTC). La hora de inicio se filtra otra vez al resolver
+la consulta: solo se ofrecen inicios posteriores al momento del cálculo, según
+la zona de atención. Las horas locales no se desplazan a UTC en la respuesta.
+Si no hay candidatos, no necesita consultar ocupaciones. Una lista vacía válida
+significa que no hay horarios libres; un proveedor fallido no produce esa lista.
+Consultar no garantiza que un horario siga libre al intentar reservar.
+
+| HTTP / code | Significado |
+| --- | --- |
+| 400 `INVALID_AVAILABILITY_QUERY` | Campo ausente/incompatible, ID no positivo o fecha pasada. |
+| 404 `PROFESSIONAL_NOT_FOUND` | Profesional ausente en el catálogo vigente. |
+| 400 `PROFESSIONAL_DISABLED` | Profesional deshabilitado. |
+| 503 `CATALOG_NOT_CURRENT` | Catálogo no acredita vigencia. |
+| 503 `CATALOG_UNAVAILABLE` | No se puede obtener o interpretar la agenda. |
+| 503 `OCCUPANCIES_UNAVAILABLE` | No se pueden obtener o interpretar ocupaciones. |
+| 503 `TECHNICAL_INTEGRATION_UNAVAILABLE` | Sesión central no disponible o rechazada; se conserva la recuperación de #4. |
+| 401 / 403 | Seguridad existente del JWT de usuario. |
+
+Los errores propios usan `application/problem+json`, código seguro e `instance`
+sin query; los filtros conservan su formato existente. Un 401 del proveedor no
+se presenta como rechazo del usuario: el JWT central utilizado se invalida y no
+se repite automáticamente la consulta. No hay reintentos HTTP ocultos ni redirects.
+Los parámetros opcionales se definen en `app.availability` de `application.yaml`
+y se sobrescriben por entorno al arrancar; zona o duración inválidas impiden el arranque.
+
+Contratos y aceptación: [SPEC](docs/features/consulta-disponibilidad/SPEC.md),
+[PLAN](docs/features/consulta-disponibilidad/PLAN.md) y
+[TASKS](docs/features/consulta-disponibilidad/TASKS.md).
+
 ## Compilar y verificar
 
 ```bash
@@ -328,6 +381,9 @@ Las pruebas de seguridad ejecutan filtros y decoder reales con JWT firmados, com
 perfiles, permisos, tiempos, identidad concurrente y CORS. Sus endpoints de observación
 existen exclusivamente en tests y no se incluyen en el artefacto productivo.
 No requieren una privada personal, `.env`, Kafka ni Catálogo/cátedra reales.
+Las pruebas de disponibilidad cubren horarios, fechas y holds con reloj controlado,
+dos proveedores HTTP separados, fallos de transporte/decodificación, login real,
+consulta concurrente e invalidación/readquisición de acceso técnico sin reiniciar.
 Reportes de pruebas en `target/surefire-reports/`. JaCoCo mide la cobertura de
 las pruebas y genera `target/site/jacoco/jacoco.xml` e `index.html` durante `verify`.
 El HTML se puede abrir localmente; el XML es el que importa Sonar.
@@ -393,6 +449,11 @@ y [TASKS](docs/features/ci-calidad/TASKS.md) para evidencia y pendientes del
 - `UserAccountEntity`, `JpaUserAccountRepository` y `UserAccountMapper`: persistencia propia y conversión a dominio; identificadores y autoridades son conjuntos de valores.
 - `SpringPasswordHasherAdapter`, `NimbusUserTokenIssuerAdapter` y `UserConfiguration`: hashing, firma y wiring del slice con clave/reloj externos; conservan el firmante técnico existente.
 - Los dos controladores de `user/infrastructure/web/`, DTO, mapper, validación y `UserProblemHandler`: frontera HTTP, límite Unicode compartido mediante `PasswordLength` y errores sin secretos. DTO y entidades permanecen separados.
+- Modelos y puertos de `availability/domain/`: horarios completos, posiciones ocupadas y contratos propios, sin JWT ni infraestructura.
+- `GetAvailabilityUseCaseImpl`: combina agenda y ocupaciones, valida la fecha y aplica un instante final consistente.
+- Los adaptadores HTTP de `availability/infrastructure/client/`: patrón Adapter para los contratos de Catálogo y cátedra; solo el de ocupaciones compone el puerto público de integración.
+- `AvailabilityProperties` y `AvailabilityConfiguration`: defaults externos validados, reloj y clientes con destinos/presupuestos separados, sin cabecera bearer global.
+- `AvailabilityController`, su mapper y `AvailabilityProblemHandler`: contrato de consulta protegido y errores propios, sin persistencia o administración de reservas.
 
 Flyway es el único responsable de cambiar el esquema; Hibernate usa `ddl-auto=validate`.
 `V2__create_users.sql` crea cuentas, identificadores y autoridades en

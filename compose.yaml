@@ -31,6 +31,8 @@ services:
       CATEDRA_GROUP_ID: ${CATEDRA_GROUP_ID:?Definir CATEDRA_GROUP_ID}
       JWT_PRIVATE_KEY_PATH: /run/secrets/private.pem
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      AVAILABILITY_TIME_ZONE: ${AVAILABILITY_TIME_ZONE:-America/Argentina/Buenos_Aires}
+      AVAILABILITY_HTTP_TIMEOUT: ${AVAILABILITY_HTTP_TIMEOUT:-5s}
     volumes:
       - type: bind
         source: ${JWT_PRIVATE_KEY_PATH:?Definir JWT_PRIVATE_KEY_PATH}

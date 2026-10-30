@@ -39,3 +39,8 @@ management:
         enabled: false
       show-details: never
       show-components: never
+
+app:
+  availability:
+    time-zone: ${AVAILABILITY_TIME_ZONE:America/Argentina/Buenos_Aires}
+    http-timeout: ${AVAILABILITY_HTTP_TIMEOUT:5s}
