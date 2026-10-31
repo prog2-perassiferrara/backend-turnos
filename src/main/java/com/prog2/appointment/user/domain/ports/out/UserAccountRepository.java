@@ -3,6 +3,7 @@ package com.prog2.appointment.user.domain.ports.out;
 import java.util.Optional;
 import com.prog2.appointment.user.domain.model.RegistrationData;
 import com.prog2.appointment.user.domain.model.UserAccount;
+import com.prog2.appointment.user.domain.model.UserProfile;
 
 /** Repository: contrato de persistencia de cuentas sin entidades JPA ni excepciones SQL. */
 public interface UserAccountRepository {
@@ -21,4 +22,6 @@ public interface UserAccountRepository {
      * @throws com.prog2.appointment.user.domain.exception.UserAccountUnavailableException si falla la lectura
      */
     Optional<UserAccount> findByIdentifier(String normalizedIdentifier);
+    /** @return perfil mínimo por ID, sin hash ni colecciones de autoridades */
+    Optional<UserProfile> findProfileById(long id);
 }

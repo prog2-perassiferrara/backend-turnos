@@ -104,7 +104,7 @@ CU-01 incluye CU-02 porque el registro correcto inicia sesión automáticamente.
 
 **Decisión para reapertura de KMP:** Consecuencia de la conservación acordada: el propietario puede consultar y retomar un proceso todavía vigente. Si terminó o venció, se informa su resultado conocido; la reapertura no lo reinicia.
 
-**Decisión para procesos simultáneos:** Revisada y confirmada con el usuario: se permite un único proceso pendiente por usuario para reducir el acaparamiento de holds. Reemplaza la decisión previa de permitir varios. Un cierre incierto conserva el límite hasta verificar su resultado; se pueden consultar horarios y conservar varias reservas ya confirmadas. Cada proceso conserva identidad, progreso e historial propios.
+**Decisión para procesos simultáneos:** Revisada y confirmada con el usuario: se permite un único proceso pendiente por usuario para reducir el acaparamiento de holds. Reemplaza la decisión previa de permitir varios. Un cierre incierto conserva el límite hasta verificar su resultado; la [aclaración docente](../../../dudas_Slack.md#duda-18-resuelta) permite archivar un intento de creación sin IDs y consultar ocupaciones antes de otra creación acotada, sin afirmar cancelación central. Se pueden consultar horarios y conservar varias reservas ya confirmadas. Cada proceso conserva identidad, progreso e historial propios.
 
 **Decisión para abandono concurrente con confirmación:** Confirmada el 2026-10-06: abandonar también autoriza cancelar la reserva si se confirmó mientras el usuario esperaba. Se conserva la intención y se informa el resultado central verificado, sin exigir otra acción del usuario.
 

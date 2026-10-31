@@ -82,6 +82,10 @@ public class UserAccountEntity {
         return id;
     }
 
+    public String getFirstName() { return firstName; }
+
+    public String getLastName() { return lastName; }
+
     public String getPasswordHash() {
         return passwordHash;
     }

@@ -27,7 +27,7 @@
 ## Flujos alternativos y de excepción
 
 - **2a. Cátedra no disponible:** mantiene el progreso y la necesidad de recuperación; no descarta operaciones ni declara éxito.
-- **2b. Información insuficiente para reconciliar:** conserva la incertidumbre y evita repetir efectos a ciegas. La ausencia en un listado no demuestra por sí sola que un hold nunca se creó.
+- **2b. Creación sin IDs recuperables:** aplica el criterio docente de abandonar ese intento y consultar ocupaciones: HELD exige esperar su expiresAt y reconsultar, CONFIRMED impide crear y libre permite un intento acotado sujeto a 409. No atribuye propiedad ni libera por diez minutos locales. Otras operaciones con información insuficiente conservan incertidumbre; una lista vacía no prueba que el efecto anterior nunca ocurrió.
 - **2c. Confirmación o cancelación central verificada:** actualiza el estado sin crear otra reserva ni volver a enviar pasos ya completados.
 - **2d. REST informa `HOLD_EXPIRED` o Kafka entrega `AppointmentProcessExpired`:** cierra el proceso local y evita nuevas confirmaciones.
 - **3a. Plazo vencido con operación en curso de resultado desconocido:** no inicia nuevos pasos; mantiene la necesidad de determinar el resultado central.
@@ -43,11 +43,11 @@
 - Persistir efectos antes de confirmar offsets Kafka y deduplicar por `eventId`.
 - Un timeout no prueba un fallo. Los reintentos son limitados y observables.
 - Recuperar el proceso no extiende el vencimiento central ni presupone que el usuario está conectado.
-- Un proceso cuyo cierre siga incierto conserva el límite de un proceso pendiente para su usuario hasta verificar el resultado; el reinicio no permite crear otro hold para eludirlo.
+- Un proceso cuyo cierre siga incierto conserva el límite para su usuario; el reinicio no permite eludirlo. La excepción es el intento de creación sin IDs archivado según el criterio docente: otra acción exige consultar ocupaciones y no afirma liberar el hold anterior.
 - Las alternativas de los casos afectados remiten a esta recuperación. No se agrega una relación `extend` en el diagrama: este caso también se inicia por reinicios o restablecimiento de comunicación, fuera de la ejecución original.
 
 ## Fuentes y pendientes
 
-**Fuentes:** [enunciado, sección 8](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 15.1 y 18](../../../INTEGRATION_REFERENCE-v2.md).
+**Fuentes:** [enunciado, sección 8](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 15.1 y 18](../../../INTEGRATION_REFERENCE-v2.md); [aclaración sobre creación incierta](../../../dudas_Slack.md#duda-18-resuelta).
 
-**Pendiente contractual/PLAN:** el anexo no documenta una consulta de holds ni una clave de idempotencia aportada por el cliente al crearlos. Precisar cómo resolver una creación cuya respuesta se perdió antes de conocer los identificadores centrales; no inventar un endpoint ni prometer recuperación completa en ese escenario.
+**Decisión contractual y pendiente de PLAN:** no hay consulta de holds ni idempotencia central para recuperar IDs perdidos. Se aplica el criterio docente de ocupaciones y nuevos intentos acotados; no se inventa recuperación de propiedad. El PLAN de este CU precisará la recuperación restante de operaciones interrumpidas y confirmaciones conocidas.
