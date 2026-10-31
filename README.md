@@ -49,10 +49,12 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
 | `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
 | `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
-| `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los POST y la consulta de ocupaciones, `5s`; total por llamada de `10s`. Sin replay del transporte. |
+| `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los POST y las consultas de ocupaciones/reservas, `5s`; total por llamada de `10s`. Sin replay del transporte. |
 | `RESERVATION_METADATA_TIMEOUT` | Opcional, espera de metadata Kafka, `5s`. |
 | `RESERVATION_ATTEMPTS` | Opcional, presupuesto de preparación/recepción, `3` intentos en total; admite 1 a 10. También limita creaciones tras consulta de ocupaciones libre; no reintenta confirmaciones. |
 | `RESERVATION_RETRY_DELAY` | Opcional, pausa entre intentos Kafka, `5s`. |
+| `RESERVATION_PHONE_PUBLISH_TIMEOUT` | Opcional, metadata más bloqueo de envío, y espera de ACK: `5s` por presupuesto, hasta `10s` en total. |
+| `RESERVATION_RESULT_VERIFICATION_DELAY` | Opcional, espera desde el ACK sin resultado antes de verificar por REST al consultar, `30s`. |
 | `RESERVATION_PREPARATION_COOLDOWN` | Opcional, espera mínima tras agotar preparación, `30s`; un nuevo inicio/reintento puede solicitar otro ciclo. |
 
 Los puertos por defecto difieren de Catálogo (8080/3306) para ejecutar ambos juntos.
@@ -451,7 +453,7 @@ Los valores son ficticios; consultar primero la disponibilidad vigente. Turnos t
 el paciente y los nombres de la cuenta autenticada, comprueba perfil, horario y canal
 Kafka antes del hold, y ejecuta creación y confirmación inicial REST en una sola acción.
 La confirmación inicial no significa que la reserva esté confirmada: el proceso espera
-la solicitud de teléfono. Su envío/corrección y la cancelación tienen sus propios CU.
+la solicitud de teléfono. El envío y la consulta de progreso se describen debajo; la cancelación tiene su propio CU.
 
 Un inicio nuevo devuelve `202`; la repetición propia, `200` con el estado persistido,
 incluso después del cierre, sin repetir los POST. Ambos usan `Cache-Control: no-store`
@@ -495,6 +497,63 @@ Desconectar el cliente tampoco cancela el proceso.
 Contrato y diseño: [SPEC](docs/features/inicio-reserva/SPEC.md),
 [PLAN](docs/features/inicio-reserva/PLAN.md) y [TASKS](docs/features/inicio-reserva/TASKS.md).
 
+## Completar teléfono y consultar progreso
+
+`POST /api/reservation-processes/{processId}/phone` acepta el teléfono del propietario
+solo cuando existe una solicitud central correlacionada y sigue vigente. El cuerpo
+contiene únicamente un UUID por envío lógico y el teléfono:
+
+```json
+{
+  "requestId": "b726f4c6-fcd9-459b-aa41-6157e678cd18",
+  "phoneNumber": "+54 (9261) 555-12.34"
+}
+```
+
+Se eliminan espacios ASCII, guiones, paréntesis y puntos. El resultado admite un `+`
+opcional y de 7 a 15 dígitos ASCII, conservando ceros iniciales. No agrega prefijos
+ni modifica el perfil de la cuenta. Los valores de ejemplo son ficticios.
+
+- `202`: proceso y respuesta conservados juntos en MySQL, incluso con Kafka caído.
+- `200`: repetición del mismo UUID y teléfono normalizado, también tras cerrar.
+- `400`: entrada inválida; `404`: proceso inexistente o ajeno, indistinguibles.
+- `409`: UUID con contenido diferente, respuesta activa, fase o plazo incompatible.
+- `503`: almacenamiento no verificable. Ningún error se interpreta por `detail`.
+
+V4 agrega una tabla de outbox e historial; una restricción SQL permite una sola
+respuesta activa por proceso. El publicador automático usa lotes de hasta diez,
+tres intentos por ciclo y el cooldown configurado; conserva contador, próxima fecha,
+eventId y contenido tras reiniciar. Nunca amplía `expiresAt`. El ACK del broker deja
+`WAITING_FOR_RESULT`, sin afirmar una confirmación funcional. Una publicación incierta
+puede repetirse físicamente con el mismo evento; cátedra lo deduplica por `eventId`.
+El productor utiliza el destino asignado retenido, sin obtener otro JWT por envío.
+
+Un rechazo correlacionado vuelve a `WAITING_FOR_PHONE`; una corrección usa un UUID
+nuevo con la solicitud y el plazo originales. Una confirmación, cancelación,
+expiración o invalidez detiene esa publicación. El recibo, el cambio de proceso y el
+cierre del envío se guardan juntos antes del offset. Un ACK tardío no reabre el envío
+anterior ni modifica la corrección. Alcanzar el plazo local impide publicar y mantiene
+la incertidumbre; no acredita una expiración central.
+
+`GET /api/reservation-processes/{processId}` devuelve progreso propio e histórico.
+Los dos endpoints requieren JWT de usuario y usan `Cache-Control: no-store`. Conservan
+los campos del inicio y agregan `phoneRequestId`, `requiredField`, `canSubmitPhone`,
+`verificationStatus`, `verifiedAt` y `warningCode`. No exponen teléfono, JWT técnico ni
+identificadores centrales. KMP puede consultar periódicamente mientras espera.
+
+La lectura es local normalmente. Con incertidumbre, plazo alcanzado o espera del
+resultado superior al límite configurado, realiza un GET central acotado por paciente
+propio, fecha exacta y una página (0, tamaño 100). Solo una coincidencia de proceso,
+paciente y horario permite reconciliar. Una página vacía/incompleta deja
+`INCONCLUSIVE`; dependencia inaccesible devuelve el estado local con `UNAVAILABLE`
+y aviso. `VERIFIED` indica evidencia central consultada y `LOCAL`, lectura local.
+Consultar no crea holds, confirma, cancela ni publica teléfonos. No fabrica una
+solicitud cuando solo conoce `PHONE_PENDING`.
+
+Contrato y diseño: [SPEC](docs/features/telefono-progreso-reserva/SPEC.md),
+[PLAN](docs/features/telefono-progreso-reserva/PLAN.md) y
+[TASKS](docs/features/telefono-progreso-reserva/TASKS.md).
+
 ## Archivos y responsabilidades
 
 - `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot; JaCoCo genera cobertura y SonarScanner publica el análisis.
@@ -526,13 +585,18 @@ Contrato y diseño: [SPEC](docs/features/inicio-reserva/SPEC.md),
 - `TransactionalReservationStore` y `JpaReservationProcessAdapter`: transacciones cortas, exclusión SQL, versión, verificación de escritura y recibo/cambio indivisibles.
 - `ReservationKafkaChannel` y `ReservationActionParser`: preparación del consumidor, frontera v1, aplicación durable y ACK posterior a MySQL.
 - Adaptadores de `reservation/infrastructure/`: componen los puertos públicos de perfil, disponibilidad y acceso técnico; el cliente HTTP no repite efectos automáticamente.
-- `ReservationController`, DTO, mapper y advice: API de inicio y errores con referencias exclusivamente propias.
+- `PhoneSubmission`, `SubmitReservationPhoneUseCaseImpl` y los puertos: normalización, aceptación durable e idempotencia del envío.
+- `PublishPendingPhonesUseCaseImpl`, `PhoneSubmissionDispatcher` y `KafkaPhoneSubmissionAdapter`: recuperación automática, publicación v1 y ACK separado del resultado.
+- `GetReservationProcessUseCaseImpl` y `WebClientCentralAppointmentAdapter`: progreso propio y reconciliación REST puntual.
+- `ReservationController`, DTO, mapper y advice: APIs de inicio, teléfono y consulta y errores con referencias exclusivamente propias.
 
 Flyway es el único responsable de cambiar el esquema; Hibernate usa `ddl-auto=validate`.
 `V2__create_users.sql` crea cuentas, identificadores y autoridades en
 `src/main/resources/db/migration/`. V1 es una sonda exclusiva de pruebas;
 no se empaqueta en producción. No editar una migración ya aplicada.
 `V3__create_reservation_processes.sql` agrega procesos e inbox de reservas.
+`V4__create_reservation_phone_submissions.sql` agrega respuestas durables e historial,
+sin modificar migraciones previas ni cuentas existentes.
 
 El paquete base es `com.prog2.appointment`. Las funcionalidades futuras respetarán
 dominio, aplicación e infraestructura según la estructura acordada; no se generan slices vacíos.
