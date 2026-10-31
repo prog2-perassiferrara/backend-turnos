@@ -122,7 +122,8 @@ class ReservationIntegrationTests {
             try (var admin =
                     Admin.create(Map.of("bootstrap.servers", KAFKA.getBootstrapServers()))) {
                 admin.createTopics(
-                                List.of(new NewTopic(ReservationTestSupport.TOPIC, 1, (short) 1)))
+                                List.of(new NewTopic(ReservationTestSupport.TOPIC, 1, (short) 1),
+                                        new NewTopic(ReservationTestSupport.PHONE_TOPIC, 1, (short) 1)))
                         .all()
                         .get(15, TimeUnit.SECONDS);
             }

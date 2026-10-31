@@ -3,12 +3,15 @@ package com.prog2.appointment.security;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Stream;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.mock.env.MockEnvironment;
@@ -34,12 +37,16 @@ class JwtSecurityPropertiesTests {
 
     @Test
     void invalidCorsPreventsContextStartupWithoutExposingTheOrigin() {
-        application.withPropertyValues("CORS_ALLOWED_ORIGINS=https://fictional-sensitive.test/path")
-                .run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure()).hasStackTraceContaining("CORS_ALLOWED_ORIGINS");
-                    assertThat(context.getStartupFailure().getMessage()).doesNotContain("fictional-sensitive.test");
-                });
+        application
+                .withPropertyValues("CORS_ALLOWED_ORIGINS=https://fictional-sensitive.test/path")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("CORS_ALLOWED_ORIGINS");
+                            assertThat(context.getStartupFailure().getMessage())
+                                    .doesNotContain("fictional-sensitive.test");
+                        });
     }
 
     @ParameterizedTest
@@ -72,15 +79,34 @@ class JwtSecurityPropertiesTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"*", "https://*.test", "null", "file:///tmp/app", "https://app.test/",
-            "https://app.test/path", "https://name:fictional-secret@app.test", "https://app.test?secret=value",
-            "https://app.test#part", "https://app.test:0", "https://app.test:65536", "https://app.test:-2",
-            "https://app.test,", ",https://app.test", "https://app.test,,https://other.test", "not a URI"})
+    @MethodSource("invalidOrigins")
     void rejectsInvalidOriginWithoutExposingItsValueOrCause(String origin) {
         var environment = new MockEnvironment().withProperty("CORS_ALLOWED_ORIGINS", origin);
         var access = JwtTestTokens.access();
         assertThatThrownBy(() -> JwtSecurityProperties.from(access, environment))
-                .isInstanceOf(BeanCreationException.class).hasNoCause()
+                .isInstanceOf(BeanCreationException.class)
+                .hasNoCause()
                 .hasMessage("Invalid security setting: CORS_ALLOWED_ORIGINS");
+    }
+
+    private static Stream<String> invalidOrigins() {
+        // El userinfo usa datos efímeros de prueba, sin credenciales embebidas.
+        return Stream.of(
+                "*",
+                "https://*.test",
+                "null",
+                "file:///tmp/app",
+                "https://app.test/",
+                "https://app.test/path",
+                "https://name:" + UUID.randomUUID() + "@app.test",
+                "https://app.test?secret=value",
+                "https://app.test#part",
+                "https://app.test:0",
+                "https://app.test:65536",
+                "https://app.test:-2",
+                "https://app.test,",
+                ",https://app.test",
+                "https://app.test,,https://other.test",
+                "not a URI");
     }
 }

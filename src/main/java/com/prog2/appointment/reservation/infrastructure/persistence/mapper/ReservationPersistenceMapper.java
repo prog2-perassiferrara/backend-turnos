@@ -1,6 +1,8 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.mapper;
 
 import java.util.UUID;
+import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
+import com.prog2.appointment.reservation.infrastructure.persistence.entity.PhoneSubmissionEntity;
 import org.springframework.stereotype.Component;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.model.HoldDetails;
@@ -12,6 +14,28 @@ import com.prog2.appointment.reservation.infrastructure.persistence.entity.Reser
 /** Traduce estado propio dentro de la transacción; no entrega entidades al caso de uso. */
 @Component
 public final class ReservationPersistenceMapper {
+    public PhoneSubmission toDomain(PhoneSubmissionEntity entity) {
+        var event =
+                new PhoneSubmission.Event(
+                        entity.getGroupId(),
+                        entity.getCentralProcessId(),
+                        entity.getHoldId(),
+                        entity.getRequestEventId(),
+                        entity.getPhoneNumber(),
+                        entity.getOccurredAt());
+        return new PhoneSubmission(
+                UUID.fromString(entity.getId()),
+                UUID.fromString(entity.getProcessId()),
+                event,
+                entity.getExpiresAt(),
+                entity.getPublishedAt(),
+                entity.getClosedAt(),
+                entity.getCycleAttempt(),
+                entity.getNextAttemptAt(),
+                entity.getLastFailure(),
+                entity.getVersion());
+    }
+
     public ReservationProcess toDomain(ReservationProcessEntity entity) {
         var hold =
                 entity.getHoldId() == null

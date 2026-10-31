@@ -116,4 +116,22 @@ class ReservationActionParserTests {
         assertThat(oversized.payload()).hasSize(65536);
         assertThat(oversized.toString()).doesNotContain("x".repeat(20));
     }
+
+    @Test
+    void rejectionRequiresItsCorrelationAndKeepsTheFingerprintUsedByV3() {
+        var source = event();
+        source.put("eventType", "AdditionalInformationRejected")
+                .put("groupId", ReservationTestSupport.GROUP)
+                .put("requestEventId", "request-1")
+                .put("reason", "INVALID_PHONE_NUMBER");
+        var rejected = parse(source);
+        assertThat(rejected.action().type()).isEqualTo(ReservationActionType.PHONE_REJECTED);
+        // Calculado ejecutando el parser anterior sobre el mismo evento v1.
+        assertThat(rejected.fingerprint())
+                .isEqualTo("3b931c132c98ffecf6f91bc3bbbb371d4ecd6e4d74abfdb02b64a3992407267e");
+        source.putObject("newCompatibleField").put("value", true);
+        assertThat(parse(source).fingerprint()).isEqualTo(rejected.fingerprint());
+        source.remove("groupId");
+        assertThat(parse(source).action()).isNull();
+    }
 }

@@ -1,5 +1,12 @@
 package com.prog2.appointment.reservation.infrastructure.web.controller;
 
+import java.util.UUID;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import com.prog2.appointment.reservation.domain.ports.in.SubmitReservationPhoneUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.GetReservationProcessUseCase;
+import com.prog2.appointment.reservation.domain.model.SubmitPhoneRequest;
+import com.prog2.appointment.reservation.infrastructure.web.dto.SubmitPhoneBody;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -20,10 +27,18 @@ import jakarta.validation.Valid;
 public final class ReservationController {
     private final StartReservationUseCase start;
     private final ReservationDtoMapper mapper;
+    private final SubmitReservationPhoneUseCase submit;
+    private final GetReservationProcessUseCase get;
 
-    public ReservationController(StartReservationUseCase start, ReservationDtoMapper mapper) {
+    public ReservationController(
+            StartReservationUseCase start,
+            ReservationDtoMapper mapper,
+            SubmitReservationPhoneUseCase submit,
+            GetReservationProcessUseCase get) {
         this.start = start;
         this.mapper = mapper;
+        this.submit = submit;
+        this.get = get;
     }
 
     /**
@@ -37,5 +52,38 @@ public final class ReservationController {
         return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.ACCEPTED)
                 .cacheControl(CacheControl.noStore())
                 .body(mapper.toResponse(result.process()));
+    }
+
+    /**
+     * @return 202 solo después del commit local; un replay equivalente devuelve 200
+     */
+    @PostMapping(
+            path = "/api/reservation-processes/{processId}/phone",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ReservationProcessResponse> phone(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID processId,
+            @Valid @RequestBody SubmitPhoneBody body) {
+        var result =
+                submit.submit(
+                        Long.parseLong(jwt.getSubject()),
+                        processId,
+                        new SubmitPhoneRequest(body.requestId(), body.phoneNumber()));
+        return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .cacheControl(CacheControl.noStore())
+                .body(mapper.toResponse(result.status()));
+    }
+
+    /**
+     * @return progreso propio vigente o histórico, sin exponer teléfono ni IDs centrales
+     */
+    @GetMapping(
+            path = "/api/reservation-processes/{processId}",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ReservationProcessResponse> get(
+            @AuthenticationPrincipal Jwt jwt, @PathVariable UUID processId) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(mapper.toResponse(get.get(Long.parseLong(jwt.getSubject()), processId)));
     }
 }

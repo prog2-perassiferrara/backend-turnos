@@ -3,6 +3,7 @@ package com.prog2.appointment.reservation.domain.model;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import com.prog2.appointment.reservation.domain.enums.CentralAppointmentState;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
@@ -135,6 +136,10 @@ public record ReservationProcess(
         if (phase.isFinal()) {
             return this;
         }
+        if (phase == ReservationPhase.PHONE_QUEUED
+                || phase == ReservationPhase.WAITING_FOR_RESULT) {
+            return this;
+        }
         if (failure.failure() == ReservationFailure.HOLD_EXPIRED) {
             return change(
                     ReservationPhase.EXPIRED,
@@ -145,7 +150,9 @@ public record ReservationProcess(
                     now);
         }
         if (phase == ReservationPhase.WAITING_FOR_PHONE
-                || phase == ReservationPhase.WAITING_FOR_REQUEST) {
+                || phase == ReservationPhase.WAITING_FOR_REQUEST
+                || phase == ReservationPhase.PHONE_QUEUED
+                || phase == ReservationPhase.WAITING_FOR_RESULT) {
             return this;
         }
         if (hold == null) {
@@ -197,6 +204,7 @@ public record ReservationProcess(
         }
         return switch (action.type()) {
             case PHONE_REQUESTED -> phoneRequested(action);
+            case PHONE_REJECTED -> phoneRejected(action);
             case EXPIRED ->
                     change(
                             ReservationPhase.EXPIRED,
@@ -232,7 +240,9 @@ public record ReservationProcess(
                         && !requestEventId.equals(action.correlation().eventId())) {
             return inconsistent();
         }
-        if (phase == ReservationPhase.WAITING_FOR_PHONE) {
+        if (phase == ReservationPhase.WAITING_FOR_PHONE
+                || phase == ReservationPhase.PHONE_QUEUED
+                || phase == ReservationPhase.WAITING_FOR_RESULT) {
             return this;
         }
         return change(
@@ -242,6 +252,107 @@ public record ReservationProcess(
                 reservationId,
                 null,
                 null);
+    }
+
+    /**
+     * @return si el propietario puede responder a la solicitud conocida ahora
+     */
+    public boolean canSubmitPhone(Instant now) {
+        return phase == ReservationPhase.WAITING_FOR_PHONE
+                && hold != null
+                && requestEventId != null
+                && !abandonmentPending
+                && now.isBefore(hold.expiresAt());
+    }
+
+    /** Conserva la intención telefónica antes de cualquier publicación. */
+    public ReservationProcess queuePhone() {
+        return change(
+                ReservationPhase.PHONE_QUEUED, hold, requestEventId, reservationId, null, null);
+    }
+
+    /** El ACK solo permite avanzar la respuesta todavía activa. */
+    public ReservationProcess phonePublished() {
+        return phase == ReservationPhase.PHONE_QUEUED
+                ? change(
+                        ReservationPhase.WAITING_FOR_RESULT,
+                        hold,
+                        requestEventId,
+                        reservationId,
+                        null,
+                        null)
+                : this;
+    }
+
+    /** Detiene el envío sin presentar un plazo local como cierre central. */
+    public ReservationProcess phoneWindowClosed() {
+        return phase == ReservationPhase.PHONE_QUEUED
+                        || phase == ReservationPhase.WAITING_FOR_RESULT
+                ? change(
+                        ReservationPhase.RECONCILIATION_REQUIRED,
+                        hold,
+                        requestEventId,
+                        reservationId,
+                        "PHONE_WINDOW_CLOSED",
+                        null)
+                : this;
+    }
+
+    private ReservationProcess phoneRejected(ReservationAction action) {
+        if (requestEventId == null || !hold.expiresAt().equals(action.expiresAt()))
+            return inconsistent();
+        return change(
+                ReservationPhase.WAITING_FOR_PHONE,
+                hold,
+                requestEventId,
+                reservationId,
+                "PHONE_REJECTED",
+                null);
+    }
+
+    /** Aplica evidencia REST sobre la versión actual sin fabricar eventos ni reabrir cierres. */
+    public ReservationProcess reconcile(CentralAppointment evidence, Instant now) {
+        if (!evidence.belongsTo(this)) return this;
+        if (phase.isFinal()
+                && !(phase == ReservationPhase.CONFIRMED
+                        && evidence.state() == CentralAppointmentState.CANCELLED)) return this;
+        return switch (evidence.state()) {
+            case PHONE_PENDING ->
+                    phase == ReservationPhase.CONFIRMATION_UNCERTAIN
+                                    || phase == ReservationPhase.CONFIRMING
+                            ? change(
+                                    ReservationPhase.WAITING_FOR_REQUEST,
+                                    hold,
+                                    requestEventId,
+                                    reservationId,
+                                    null,
+                                    null)
+                            : this;
+            case CONFIRMED ->
+                    change(
+                            ReservationPhase.CONFIRMED,
+                            hold,
+                            requestEventId,
+                            evidence.reservationId(),
+                            null,
+                            now);
+            case CANCELLED ->
+                    change(
+                            ReservationPhase.CANCELLED,
+                            hold,
+                            requestEventId,
+                            evidence.reservationId(),
+                            null,
+                            now);
+            case FAILED ->
+                    change(
+                            ReservationPhase.FAILED,
+                            hold,
+                            requestEventId,
+                            evidence.reservationId(),
+                            "CENTRAL_PROCESS_FAILED",
+                            now);
+        };
     }
 
     private ReservationProcess inconsistent() {

@@ -1,6 +1,15 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.adapter;
 
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.function.Supplier;
+import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
+import com.prog2.appointment.reservation.domain.exception.ReservationPhoneException;
+import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
+import com.prog2.appointment.reservation.domain.model.CentralAppointment;
+import com.prog2.appointment.reservation.domain.model.SubmitPhoneRequest;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
@@ -104,6 +113,103 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
                 if (!duplicate(failure)) {
                     throw new ReservationStorageException();
                 }
+            }
+        }
+        throw new ReservationStorageException();
+    }
+
+    @Override
+    public PhoneResult submitPhone(
+            long ownerId, UUID processId, SubmitPhoneRequest request, String groupId, Instant now) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                var result = store.submitPhone(ownerId, processId, request, groupId, now);
+                return new PhoneResult(
+                        result.process(),
+                        findPhone(request.requestId())
+                                .orElseThrow(ReservationStorageException::new),
+                        result.created());
+            } catch (OptimisticLockingFailureException _) {
+                // No hubo commit: repetir solo la aceptación local sobre datos actuales.
+            } catch (DataAccessException | TransactionException failure) {
+                var saved = committedPhone(ownerId, processId, request);
+                if (saved.isPresent()) return saved.get();
+                if (!duplicate(failure)) throw new ReservationStorageException();
+            }
+        }
+        throw new ReservationStorageException();
+    }
+
+    private Optional<PhoneResult> committedPhone(
+            long ownerId, UUID processId, SubmitPhoneRequest request) {
+        var own =
+                find(processId)
+                        .filter(value -> value.ownerId() == ownerId)
+                        .orElseThrow(
+                                () ->
+                                        new ReservationPhoneException(
+                                                ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
+        return findPhone(request.requestId())
+                .map(
+                        phone -> {
+                            if (!phone.matches(processId, request))
+                                throw new ReservationPhoneException(
+                                        ReservationFailure.REQUEST_ID_CONFLICT);
+                            return new PhoneResult(own, phone, false);
+                        });
+    }
+
+    @Override
+    public Optional<PhoneSubmission> findPhone(UUID id) {
+        return read(() -> store.findPhone(id));
+    }
+
+    @Override
+    public Optional<PhoneSubmission> latestPhone(UUID processId) {
+        return read(() -> store.latestPhone(processId));
+    }
+
+    @Override
+    public List<UUID> duePhones(Instant now, int limit) {
+        return read(() -> store.duePhones(now, limit));
+    }
+
+    @Override
+    public Optional<PhoneSubmission> beginPhonePublication(
+            UUID id, Instant now, int attempts, Duration retry, Duration cooldown) {
+        return write(() -> store.beginPhonePublication(id, now, attempts, retry, cooldown));
+    }
+
+    @Override
+    public void phonePublished(UUID id, Instant now) {
+        write(
+                () -> {
+                    store.phonePublished(id, now);
+                    return null;
+                });
+    }
+
+    @Override
+    public ReservationProcess reconcile(UUID id, CentralAppointment evidence, Instant now) {
+        return write(() -> store.reconcile(id, evidence, now));
+    }
+
+    private static <T> T read(Supplier<T> operation) {
+        try {
+            return operation.get();
+        } catch (DataAccessException | TransactionException _) {
+            throw new ReservationStorageException();
+        }
+    }
+
+    private static <T> T write(Supplier<T> operation) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return operation.get();
+            } catch (OptimisticLockingFailureException _) {
+                /* Nueva transacción en cada intento. */
+            } catch (DataAccessException | TransactionException _) {
+                throw new ReservationStorageException();
             }
         }
         throw new ReservationStorageException();

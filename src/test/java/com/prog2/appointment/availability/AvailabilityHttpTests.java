@@ -34,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestConstructor;
+import org.springframework.test.annotation.DirtiesContext;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
@@ -49,9 +50,13 @@ import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-/** Recorrido HTTP/SQL completo: usuario real, filtros y clientes productivos, datos e infraestructura descartables. */
+/**
+ * Recorrido HTTP/SQL completo: usuario real, filtros y clientes productivos, datos e
+ * infraestructura descartables.
+ */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import(AvailabilityHttpTests.TimeConfiguration.class)
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 @ExtendWith(OutputCaptureExtension.class)
@@ -97,7 +102,8 @@ class AvailabilityHttpTests {
     void prepareUserAndQueries() throws IOException, InterruptedException {
         PROVIDERS.resetQueries();
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(access.getAccess()).isNotNull());
-        String login = "availability_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String login =
+                "availability_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         String profile = json.writeValueAsString(Map.of("login", login, "password", PASSWORD,
                 "firstName", "Paciente", "lastName", "Ficticio", "email", login + "@example.test"));
         var registration = post("/api/register", profile);
@@ -121,32 +127,51 @@ class AvailabilityHttpTests {
     @Test
     void returnsOnlyFreeStartTimesWithTheAttentionZoneAndNoSensitiveData(CapturedOutput output)
             throws IOException, InterruptedException {
-        String entries = AvailabilityTestSupport.position(AvailabilityTestSupport.DATE, "09:00", "CONFIRMED", null)
-                + "," + AvailabilityTestSupport.position(AvailabilityTestSupport.DATE, "09:30", "HELD",
-                        AvailabilityTestSupport.NOW.plusSeconds(60).toString());
+        String entries =
+                AvailabilityTestSupport.position(
+                                AvailabilityTestSupport.DATE, "09:00", "CONFIRMED", null)
+                        + ","
+                        + AvailabilityTestSupport.position(
+                                AvailabilityTestSupport.DATE,
+                                "09:30",
+                                "HELD",
+                                AvailabilityTestSupport.NOW.plusSeconds(60).toString());
         PROVIDERS.occupancyBody.set(AvailabilityTestSupport.occupancies(15, AvailabilityTestSupport.DATE, entries));
         long accountsBefore = jdbc.queryForObject("SELECT COUNT(*) FROM app_user", Long.class);
         var response = get(QUERY, token);
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(json.readTree(response.body())).isEqualTo(json.readTree("""
-                {"professionalId":15,"date":"2026-11-02","timeZone":"America/Argentina/Buenos_Aires",
-                 "availableStartTimes":["10:00:00","10:30:00"]}
-                """));
+        assertThat(json.readTree(response.body()))
+                .isEqualTo(
+                        json.readTree(
+                                """
+                                {"professionalId":15,"date":"2026-11-02","timeZone":"America/Argentina/Buenos_Aires",
+                                 "availableStartTimes":["10:00:00","10:30:00"]}
+                                """));
         assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");
         assertThat(response.headers().firstValue("Set-Cookie")).isEmpty();
         assertThat(PROVIDERS.agendaCalls).hasValue(1);
         assertThat(PROVIDERS.occupancyCalls).hasValue(1);
         assertThat(PROVIDERS.invalidCredentials).hasValue(0);
         assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM app_user", Long.class)).isEqualTo(accountsBefore);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM app_user", Long.class))
+                .isEqualTo(accountsBefore);
         assertThat(output).doesNotContain(token, PASSWORD, PROVIDERS.centralToken);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "?date=2026-11-02", "?professionalId=15", "?professionalId=0&date=2026-11-02",
-            "?professionalId=-1&date=2026-11-02", "?professionalId=letters&date=2026-11-02",
-            "?professionalId=9223372036854775808&date=2026-11-02", "?professionalId=15&date=invalid",
-            "?professionalId=15&date=2026-02-30", "?professionalId=15&date=2026-11-01"})
+    @ValueSource(
+            strings = {
+                "",
+                "?date=2026-11-02",
+                "?professionalId=15",
+                "?professionalId=0&date=2026-11-02",
+                "?professionalId=-1&date=2026-11-02",
+                "?professionalId=letters&date=2026-11-02",
+                "?professionalId=9223372036854775808&date=2026-11-02",
+                "?professionalId=15&date=invalid",
+                "?professionalId=15&date=2026-02-30",
+                "?professionalId=15&date=2026-11-01"
+            })
     void rejectsInvalidInputBeforeProviders(String query) throws IOException, InterruptedException {
         problem(get(query, token), 400, "INVALID_AVAILABILITY_QUERY");
         assertThat(PROVIDERS.agendaCalls).hasValue(0);
@@ -232,20 +257,26 @@ class AvailabilityHttpTests {
     void concurrentQueriesKeepTheirProfessionalAndDateAndOnlySendReads() throws Exception {
         var entered = new CountDownLatch(2);
         var release = new CountDownLatch(1);
-        PROVIDERS.occupancyHandler.set(exchange -> {
-            entered.countDown();
-            try {
-                if (!release.await(10, TimeUnit.SECONDS)) {
-                    throw new IOException("Fictional concurrency barrier timed out");
-                }
-                var query = AvailabilityTestSupport.query(exchange);
-                TestIntegrationSupport.respond(exchange, 200, AvailabilityTestSupport.occupancies(
-                        Long.parseLong(query.get("professionalId")), java.time.LocalDate.parse(query.get("from")), ""));
-            } catch (InterruptedException _) {
-                Thread.currentThread().interrupt();
-                exchange.close();
-            }
-        });
+        PROVIDERS.occupancyHandler.set(
+                exchange -> {
+                    entered.countDown();
+                    try {
+                        if (!release.await(10, TimeUnit.SECONDS)) {
+                            throw new IOException("Fictional concurrency barrier timed out");
+                        }
+                        var query = AvailabilityTestSupport.query(exchange);
+                        TestIntegrationSupport.respond(
+                                exchange,
+                                200,
+                                AvailabilityTestSupport.occupancies(
+                                        Long.parseLong(query.get("professionalId")),
+                                        java.time.LocalDate.parse(query.get("from")),
+                                        ""));
+                    } catch (InterruptedException _) {
+                        Thread.currentThread().interrupt();
+                        exchange.close();
+                    }
+                });
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> get(QUERY, token));
             var second = executor.submit(() -> get("?professionalId=16&date=2026-11-09", token));
@@ -295,14 +326,29 @@ class AvailabilityHttpTests {
         } else {
             assertThat(body.path("instance").asString()).isEqualTo(PATH);
         }
-        assertThat(response.headers().firstValue("Content-Type")).contains("application/problem+json");
-        assertThat(response.body()).doesNotContain("fictional-private", token, PROVIDERS.centralToken);
+        assertThat(response.headers().firstValue("Content-Type"))
+                .contains("application/problem+json");
+        assertThat(response.body())
+                .doesNotContain("fictional-private", token, PROVIDERS.centralToken);
     }
 
     private static String signedToken(String authority, String use) throws JOSEException {
-        var claims = Map.<String, Object>of("iss", "backend-turnos", "sub", "999", "aud", List.of("turnos"),
-                "token_use", use, "auth", authority, "iat", AvailabilityTestSupport.NOW.getEpochSecond(),
-                "exp", AvailabilityTestSupport.NOW.plusSeconds(86400).getEpochSecond());
+        var claims =
+                Map.<String, Object>of(
+                        "iss",
+                        "backend-turnos",
+                        "sub",
+                        "999",
+                        "aud",
+                        List.of("turnos"),
+                        "token_use",
+                        use,
+                        "auth",
+                        authority,
+                        "iat",
+                        AvailabilityTestSupport.NOW.getEpochSecond(),
+                        "exp",
+                        AvailabilityTestSupport.NOW.plusSeconds(86400).getEpochSecond());
         var jwt = new JWSObject(new JWSHeader(JWSAlgorithm.RS256), new Payload(claims));
         jwt.sign(new RSASSASigner(TestIntegrationSupport.KEYS.getPrivate()));
         return jwt.serialize();

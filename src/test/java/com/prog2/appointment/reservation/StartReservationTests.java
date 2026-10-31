@@ -470,6 +470,57 @@ class StartReservationTests {
         }
 
         @Override
+        public PhoneResult submitPhone(
+                long ownerId,
+                UUID id,
+                com.prog2.appointment.reservation.domain.model.SubmitPhoneRequest request,
+                String group,
+                Instant now) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<com.prog2.appointment.reservation.domain.model.PhoneSubmission> findPhone(
+                UUID id) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<com.prog2.appointment.reservation.domain.model.PhoneSubmission> latestPhone(
+                UUID id) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.List<UUID> duePhones(Instant now, int limit) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<com.prog2.appointment.reservation.domain.model.PhoneSubmission>
+                beginPhonePublication(
+                        UUID id,
+                        Instant now,
+                        int attempts,
+                        java.time.Duration retry,
+                        java.time.Duration cooldown) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void phonePublished(UUID id, Instant now) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ReservationProcess reconcile(
+                UUID id,
+                com.prog2.appointment.reservation.domain.model.CentralAppointment evidence,
+                Instant now) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void accept(ReservationDelivery delivery) {
             throw new UnsupportedOperationException();
         }

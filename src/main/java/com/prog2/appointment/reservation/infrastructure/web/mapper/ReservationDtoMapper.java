@@ -1,6 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.web.mapper;
 
 import java.time.format.DateTimeFormatter;
+import com.prog2.appointment.reservation.domain.model.ReservationStatus;
 import org.springframework.stereotype.Component;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.model.ReservationSelection;
@@ -22,6 +23,18 @@ public final class ReservationDtoMapper {
     }
 
     public ReservationProcessResponse toResponse(ReservationProcess process) {
+        return toResponse(
+                new ReservationStatus(
+                        process,
+                        null,
+                        false,
+                        com.prog2.appointment.reservation.domain.enums.VerificationStatus.LOCAL,
+                        null,
+                        null));
+    }
+
+    public ReservationProcessResponse toResponse(ReservationStatus status) {
+        var process = status.process();
         return new ReservationProcessResponse(
                 process.id(),
                 process.selection().professionalId(),
@@ -29,6 +42,14 @@ public final class ReservationDtoMapper {
                 TIME.format(process.selection().startTime()),
                 process.phase().name(),
                 process.hold() == null ? null : process.hold().expiresAt(),
-                process.reasonCode());
+                process.reasonCode(),
+                status.phoneRequestId(),
+                process.requestEventId() == null || process.phase().isFinal()
+                        ? null
+                        : "PHONE_NUMBER",
+                status.canSubmitPhone(),
+                status.verificationStatus().name(),
+                status.verifiedAt(),
+                status.warningCode());
     }
 }

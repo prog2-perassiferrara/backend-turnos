@@ -15,4 +15,10 @@ public record ReservationProcessResponse(
         String startTime,
         String state,
         Instant expiresAt,
-        String reasonCode) {}
+        String reasonCode,
+        UUID phoneRequestId,
+        String requiredField,
+        boolean canSubmitPhone,
+        String verificationStatus,
+        Instant verifiedAt,
+        String warningCode) {}
