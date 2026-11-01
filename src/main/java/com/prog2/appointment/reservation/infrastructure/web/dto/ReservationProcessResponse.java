@@ -21,4 +21,6 @@ public record ReservationProcessResponse(
         boolean canSubmitPhone,
         String verificationStatus,
         Instant verifiedAt,
-        String warningCode) {}
+        String warningCode,
+        String professionalFirstName,
+        String professionalLastName) {}

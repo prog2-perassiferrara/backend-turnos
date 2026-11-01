@@ -554,6 +554,47 @@ Contrato y diseño: [SPEC](docs/features/telefono-progreso-reserva/SPEC.md),
 [PLAN](docs/features/telefono-progreso-reserva/PLAN.md) y
 [TASKS](docs/features/telefono-progreso-reserva/TASKS.md).
 
+## Consultar reservas propias
+
+`GET /api/reservations?page=0&size=20` requiere JWT de usuario. El propietario se
+obtiene del token; el cliente solo elige página y tamaño, sin filtros ni orden
+configurable. `page` comienza en cero, `size` admite de 1 a 100 y sus valores por
+defecto son 0 y 20. Una página válida sin resultados conserva el total del historial.
+
+La respuesta contiene `pending` (objeto o null), `history` con `content`, `page`,
+`size`, `totalElements` y `totalPages`, y los campos `verificationStatus`,
+`verifiedAt` y `warningCode`. El pendiente siempre aparece separado y no cuenta
+en los totales. El historial ordena fecha y hora del turno descendentes, con
+UUID ascendente para desempatar. Los registros mantienen los campos del progreso
+individual, con `professionalFirstName` y `professionalLastName` opcionales;
+no entregan identificadores centrales, teléfono ni datos de otro usuario.
+
+El conjunto y los totales proceden de registros locales propios. Cátedra verifica
+y enriquece coincidencias por proceso, paciente y turno; sus reservas sin
+asociación local no se importan. V5 conserva el primer nombre completo válido
+obtenido del profesional. Un nombre desconocido permanece null, sin exigir
+Catálogo ni reutilizar ese historial como información vigente para reservar.
+
+La lectura central tiene un máximo de tres páginas de 100 y un presupuesto total
+de dos veces `RESERVATION_HTTP_TIMEOUT` (10 segundos por defecto), sin reintentos.
+Después se releen pendiente e historial juntos para preservar resultados
+concurrentes. Una ausencia central nunca elimina registros ni prueba cierre.
+
+Una caída central devuelve 200 con respaldo local, incluso vacío, y
+`APPOINTMENT_STATUS_UNAVAILABLE`; un recorrido incompleto o evidencia insuficiente
+produce `APPOINTMENT_STATUS_INCONCLUSIVE`. Cada registro indica su propia
+verificación. El resumen solo describe la respuesta actual, no la sincronización
+del historial completo; una respuesta parcial no obtiene un `verifiedAt` global
+nuevo. El listado no crea holds, confirma, publica teléfonos ni cancela.
+
+Errores de paginación: 400 `INVALID_RESERVATION_PAGE`; persistencia local no
+verificable: 503 `STORAGE_UNAVAILABLE`. Se conservan 401/403 y
+`Cache-Control: no-store`.
+
+Contrato y diseño: [SPEC](docs/features/consulta-reservas-propias/SPEC.md),
+[PLAN](docs/features/consulta-reservas-propias/PLAN.md) y
+[TASKS](docs/features/consulta-reservas-propias/TASKS.md).
+
 ## Archivos y responsabilidades
 
 - `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot; JaCoCo genera cobertura y SonarScanner publica el análisis.
@@ -597,6 +638,8 @@ no se empaqueta en producción. No editar una migración ya aplicada.
 `V3__create_reservation_processes.sql` agrega procesos e inbox de reservas.
 `V4__create_reservation_phone_submissions.sql` agrega respuestas durables e historial,
 sin modificar migraciones previas ni cuentas existentes.
+`V5__add_reservation_professional_names.sql` añade nombre y apellido históricos
+opcionales a los procesos existentes, sin otra tabla ni pérdida de datos.
 
 El paquete base es `com.prog2.appointment`. Las funcionalidades futuras respetarán
 dominio, aplicación e infraestructura según la estructura acordada; no se generan slices vacíos.

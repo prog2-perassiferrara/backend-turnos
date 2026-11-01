@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.domain.ports.out;
 
+import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -15,6 +17,18 @@ import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 /** Repository de procesos e inbox; todas sus escrituras regresan después del commit verificable. */
 public interface ReservationProcessRepository {
     Optional<ReservationProcess> find(UUID id);
+
+    /**
+     * Lee pendiente, último envío y página/total propios en una misma vista consistente.
+     *
+     * @param ownerId propietario autenticado
+     * @param page página de historial desde cero
+     * @param size tamaño entre 1 y 100
+     * @return datos propios, sin incluir el pendiente en el total
+     * @throws com.prog2.appointment.reservation.domain.exception.ReservationStorageException ante
+     *     fallo local
+     */
+    OwnReservationPage readOwn(long ownerId, int page, int size);
 
     Optional<ReservationProcess> findPending(long ownerId);
 

@@ -3,6 +3,7 @@ package com.prog2.appointment.reservation.domain.enums;
 /** Motivos propios seguros; nunca incluyen cuerpos, nombres o credenciales externas. */
 public enum ReservationFailure {
     INVALID_RESERVATION_SELECTION,
+    INVALID_RESERVATION_PAGE,
     PROFILE_NOT_RESERVABLE,
     SLOT_NOT_AVAILABLE,
     ACTIVE_RESERVATION_PROCESS,

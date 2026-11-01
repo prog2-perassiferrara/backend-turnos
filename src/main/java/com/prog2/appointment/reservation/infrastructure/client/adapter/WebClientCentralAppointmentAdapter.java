@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.client.adapter;
 
+import com.prog2.appointment.reservation.domain.model.ProfessionalName;
+
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import com.prog2.appointment.reservation.domain.enums.CentralAppointmentState;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
@@ -17,8 +19,16 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Arrays;
+import java.util.HashSet;
+import com.prog2.appointment.reservation.domain.model.CentralAppointmentsBatch;
+import com.prog2.appointment.reservation.domain.enums.VerificationStatus;
 
-/** Reconciliación puntual: una página y un intento; ausencia de coincidencia sigue inconclusa. */
+/** Lecturas puntuales y paginadas acotadas; ausencia de coincidencia nunca demuestra liberación. */
 public final class WebClientCentralAppointmentAdapter implements CentralAppointmentGateway {
     private final WebClient client;
     private final TechnicalAccessUseCase access;
@@ -29,6 +39,114 @@ public final class WebClientCentralAppointmentAdapter implements CentralAppointm
         this.client = client;
         this.access = access;
         this.timeout = timeout;
+    }
+
+    @Override
+    public CentralAppointmentsBatch listOwn(long ownerId) {
+        var matches = new HashMap<String, CentralAppointment>();
+        var conflicts = new HashSet<String>();
+        var status = VerificationStatus.VERIFIED;
+        Long expectedTotal = null;
+        long deadline = System.nanoTime() + timeout.multipliedBy(2).toNanos();
+        try {
+            String token = access.getAccess().token().value();
+            String patient = "user-" + ownerId;
+            for (int page = 0; page < 3; page++) {
+                var result = page(patient, page, token, deadline);
+                if (result == null) return batch(matches, VerificationStatus.INCONCLUSIVE);
+                if (!collect(result, patient, matches, conflicts))
+                    status = VerificationStatus.INCONCLUSIVE;
+                long total = Long.parseLong(result.total());
+                if (!validPage(result, page, total, expectedTotal)) {
+                    return batch(matches, VerificationStatus.INCONCLUSIVE);
+                }
+                expectedTotal = total;
+                if (!result.hasNext()) return batch(matches, status);
+            }
+            return batch(matches, VerificationStatus.INCONCLUSIVE);
+        } catch (IllegalArgumentException _) {
+            return batch(matches, VerificationStatus.INCONCLUSIVE);
+        } catch (RuntimeException _) {
+            return batch(matches, VerificationStatus.UNAVAILABLE);
+        }
+    }
+
+    private static boolean collect(
+            PageResult result,
+            String patient,
+            Map<String, CentralAppointment> matches,
+            java.util.Set<String> conflicts) {
+        boolean valid = true;
+        for (var item : result.rows().stream().limit(100).toList()) {
+            var candidate =
+                    item != null && patient.equals(item.externalPatientId())
+                            ? appointment(item)
+                            : null;
+            if (candidate == null || !collectCandidate(candidate, matches, conflicts))
+                valid = false;
+        }
+        return valid;
+    }
+
+    private static boolean collectCandidate(
+            CentralAppointment candidate,
+            Map<String, CentralAppointment> matches,
+            java.util.Set<String> conflicts) {
+        String key = candidate.centralProcessId();
+        if (conflicts.contains(key)) return false;
+        var prior = matches.putIfAbsent(key, candidate);
+        if (prior == null || prior.equals(candidate)) return true;
+        matches.remove(key);
+        conflicts.add(key);
+        return false;
+    }
+
+    private static boolean validPage(PageResult result, int page, long total, Long expectedTotal) {
+        int received = result.rows().size();
+        long consumed = (long) page * 100 + received;
+        return total >= consumed
+                && received <= 100
+                && total >= 0
+                && (expectedTotal == null || total == expectedTotal)
+                && result.hasNext() == (consumed < total)
+                && (!result.hasNext() || received == 100);
+    }
+
+    private PageResult page(String patient, int page, String token, long deadline) {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) throw unavailable();
+        // La siguiente URL se construye localmente: nunca seguir hosts proporcionados en Link.
+        return client.get()
+                .uri(builder ->
+                        builder.path("/api/appointments")
+                                .queryParam("externalPatientId", patient)
+                                .queryParam("page", page)
+                                .queryParam("size", 100)
+                                .build())
+                .headers(headers -> headers.setBearerAuth(token))
+                .accept(MediaType.APPLICATION_JSON)
+                .exchangeToMono(result -> {
+                    if (result.statusCode().value() == 200) {
+                        String total = result.headers().asHttpHeaders().getFirst("X-Total-Count");
+                        String links = result.headers().asHttpHeaders().getFirst("Link");
+                        return result.bodyToMono(CentralAppointmentResponse[].class)
+                                .map(rows -> new PageResult(Arrays.asList(rows), total, links));
+                    }
+                    if (result.statusCode().value() == 401) access.rejectAccess(token);
+                    return result.releaseBody().then(Mono.error(unavailable()));
+                })
+                .block(Duration.ofNanos(remaining));
+    }
+
+    private static CentralAppointmentsBatch batch(
+            Map<String, CentralAppointment> matches, VerificationStatus status) {
+        return new CentralAppointmentsBatch(new ArrayList<>(matches.values()), status);
+    }
+
+    private record PageResult(List<CentralAppointmentResponse> rows, String total, String links) {
+        boolean hasNext() {
+            return links != null && (links.contains("rel=\"next\"") || links.contains("rel=next"));
+        }
     }
 
     @Override
@@ -101,7 +219,9 @@ public final class WebClientCentralAppointmentAdapter implements CentralAppointm
                     new ReservationSelection(
                             item.professionalId(), item.appointmentDate(), item.startTime()),
                     item.reservationId(),
-                    CentralAppointmentState.valueOf(item.status()));
+                    CentralAppointmentState.valueOf(item.status()),
+                    ProfessionalName.from(
+                            item.professionalFirstName(), item.professionalLastName()));
         } catch (IllegalArgumentException _) {
             return null;
         }

@@ -37,6 +37,12 @@ public class ReservationProcessEntity {
     @Column(name = "patient_last_name", length = 100)
     private String patientLastName;
 
+    @Column(name = "professional_first_name", length = 255)
+    private String professionalFirstName;
+
+    @Column(name = "professional_last_name", length = 255)
+    private String professionalLastName;
+
     @Column(name = "phase", length = 40)
     private String phase;
 
@@ -96,6 +102,10 @@ public class ReservationProcessEntity {
         startTime = process.selection().startTime();
         patientFirstName = process.patient().firstName();
         patientLastName = process.patient().lastName();
+        professionalFirstName =
+                process.professionalName() == null ? null : process.professionalName().firstName();
+        professionalLastName =
+                process.professionalName() == null ? null : process.professionalName().lastName();
         phase = process.phase().name();
         holdId = process.hold() == null ? null : process.hold().holdId();
         centralProcessId = process.hold() == null ? null : process.hold().centralProcessId();
@@ -135,6 +145,14 @@ public class ReservationProcessEntity {
 
     public String getPatientLastName() {
         return patientLastName;
+    }
+
+    public String getProfessionalFirstName() {
+        return professionalFirstName;
+    }
+
+    public String getProfessionalLastName() {
+        return professionalLastName;
     }
 
     public String getPhase() {

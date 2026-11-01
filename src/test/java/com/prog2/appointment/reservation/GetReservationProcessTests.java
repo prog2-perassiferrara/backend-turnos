@@ -94,7 +94,8 @@ class GetReservationProcessTests {
                         process.patient().externalPatientId(),
                         process.selection(),
                         8251,
-                        CentralAppointmentState.CONFIRMED);
+                        CentralAppointmentState.CONFIRMED,
+                        null);
         when(central.find(process)).thenReturn(Optional.of(evidence));
         when(repository.reconcile(eq(process.id()), eq(evidence), any()))
                 .thenAnswer(

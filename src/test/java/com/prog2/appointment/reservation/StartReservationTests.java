@@ -441,6 +441,12 @@ class StartReservationTests {
         final Map<UUID, ReservationProcess> values = new HashMap<>();
 
         @Override
+        public com.prog2.appointment.reservation.domain.model.OwnReservationPage readOwn(
+                long ownerId, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Optional<ReservationProcess> find(UUID id) {
             return Optional.ofNullable(values.get(id));
         }
