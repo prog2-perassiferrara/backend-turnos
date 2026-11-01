@@ -9,6 +9,9 @@ public enum ReservationPhase {
     CONFIRMATION_UNCERTAIN,
     WAITING_FOR_REQUEST,
     WAITING_FOR_PHONE,
+    PHONE_QUEUED,
+    WAITING_FOR_RESULT,
+    FAILED,
     RECONCILIATION_REQUIRED,
     HOLD_ATTEMPT_ABANDONED,
     REJECTED,
@@ -22,6 +25,7 @@ public enum ReservationPhase {
      */
     public boolean isFinal() {
         return this == HOLD_ATTEMPT_ABANDONED
+                || this == FAILED
                 || this == REJECTED
                 || this == EXPIRED
                 || this == CONFIRMED

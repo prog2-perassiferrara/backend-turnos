@@ -10,12 +10,16 @@ public record ReservationProperties(
         Duration metadataTimeout,
         int attempts,
         Duration retryDelay,
-        Duration preparationCooldown) {
+        Duration preparationCooldown,
+        Duration phonePublishTimeout,
+        Duration resultVerificationDelay) {
     public ReservationProperties {
         validate(httpTimeout);
         validate(metadataTimeout);
         validate(retryDelay);
         validate(preparationCooldown);
+        validate(phonePublishTimeout);
+        validate(resultVerificationDelay);
         if (attempts < 1 || attempts > 10) {
             throw new IllegalArgumentException("Invalid app.reservation.attempts");
         }
@@ -34,7 +38,9 @@ public record ReservationProperties(
                     duration(environment, "metadata-timeout", "5s"),
                     Integer.parseInt(environment.getProperty("app.reservation.attempts", "3")),
                     duration(environment, "retry-delay", "5s"),
-                    duration(environment, "preparation-cooldown", "30s"));
+                    duration(environment, "preparation-cooldown", "30s"),
+                    duration(environment, "phone-publish-timeout", "5s"),
+                    duration(environment, "result-verification-delay", "30s"));
         } catch (RuntimeException _) {
             throw new IllegalArgumentException("Invalid app.reservation configuration");
         }

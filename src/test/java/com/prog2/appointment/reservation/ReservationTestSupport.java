@@ -32,6 +32,7 @@ import tools.jackson.databind.json.JsonMapper;
 public final class ReservationTestSupport implements AutoCloseable {
     public static final String GROUP = "reservation-test";
     public static final String TOPIC = "reservation-test-actions";
+    public static final String PHONE_TOPIC = "reservation-test-phone";
     public static final String CONSUMER = "reservation-test-consumer";
     public final String token =
             TestIntegrationSupport.token(ReservationProcessTests.NOW.plusSeconds(86400));
@@ -47,6 +48,9 @@ public final class ReservationTestSupport implements AutoCloseable {
                     });
     private final Path key;
     private final Supplier<String> broker;
+    public final AtomicInteger appointmentQueries = new AtomicInteger();
+    public final AtomicReference<HttpHandler> appointmentsOverride = new AtomicReference<>();
+    public final AtomicReference<Map<String, String>> appointmentFilters = new AtomicReference<>();
     public final AtomicInteger creates = new AtomicInteger();
     public final AtomicInteger confirmations = new AtomicInteger();
     public final AtomicInteger credentialFailures = new AtomicInteger();
@@ -94,6 +98,9 @@ public final class ReservationTestSupport implements AutoCloseable {
     }
 
     public void reset() {
+        appointmentQueries.set(0);
+        appointmentsOverride.set(null);
+        appointmentFilters.set(null);
         occupancyQueries.set(0);
         occupanciesOverride.set(null);
         creates.set(0);
@@ -174,7 +181,15 @@ public final class ReservationTestSupport implements AutoCloseable {
                                     "kafkaAppointmentActionsTopic",
                                     TOPIC,
                                     "kafkaAppointmentPhoneTopic",
-                                    "fictional-phone")));
+                                    PHONE_TOPIC)));
+            return;
+        }
+        if (path.equals("/api/appointments")) {
+            appointmentQueries.incrementAndGet();
+            appointmentFilters.set(query(exchange.getRequestURI().getRawQuery()));
+            var custom = appointmentsOverride.get();
+            if (custom != null) custom.handle(exchange);
+            else reply(exchange, 200, "[]");
             return;
         }
         if (path.equals("/api/appointment-occupancies")) {

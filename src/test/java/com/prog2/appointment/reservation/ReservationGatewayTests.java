@@ -210,7 +210,9 @@ class ReservationGatewayTests {
         "app.reservation.attempts,0",
         "app.reservation.attempts,11",
         "app.reservation.retry-delay,-1s",
-        "app.reservation.preparation-cooldown,0s"
+        "app.reservation.preparation-cooldown,0s",
+        "app.reservation.phone-publish-timeout,0s",
+        "app.reservation.result-verification-delay,invalid"
     })
     void invalidSettingsFailSafely(String key, String value) {
         var environment = new MockEnvironment().withProperty(key, value);
@@ -225,6 +227,8 @@ class ReservationGatewayTests {
         var settings = ReservationProperties.from(new MockEnvironment());
         assertThat(settings.httpTimeout()).isEqualTo(Duration.ofSeconds(5));
         assertThat(settings.attempts()).isEqualTo(3);
+        assertThat(settings.phonePublishTimeout()).isEqualTo(Duration.ofSeconds(5));
+        assertThat(settings.resultVerificationDelay()).isEqualTo(Duration.ofSeconds(30));
         assertThat(settings.metadataTimeout()).isEqualTo(Duration.ofSeconds(5));
         assertThat(settings.preparationCooldown()).isEqualTo(Duration.ofSeconds(30));
     }

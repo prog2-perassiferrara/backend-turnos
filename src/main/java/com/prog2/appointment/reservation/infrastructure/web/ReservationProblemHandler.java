@@ -47,6 +47,7 @@ public final class ReservationProblemHandler {
     @ExceptionHandler({
         MethodArgumentNotValidException.class,
         HttpMessageNotReadableException.class,
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
         IllegalArgumentException.class
     })
     ResponseEntity<ProblemDetail> invalid(HttpServletRequest request) {
@@ -70,14 +71,20 @@ public final class ReservationProblemHandler {
             java.time.Instant recheckAt) {
         HttpStatus status =
                 switch (failure) {
-                    case INVALID_RESERVATION_SELECTION, PROFILE_NOT_RESERVABLE ->
+                    case INVALID_RESERVATION_SELECTION,
+                            PROFILE_NOT_RESERVABLE,
+                            INVALID_PHONE_NUMBER ->
                             HttpStatus.BAD_REQUEST;
                     case ACTIVE_RESERVATION_PROCESS,
                             REQUEST_ID_CONFLICT,
                             SLOT_NOT_AVAILABLE,
                             HOLD_EXPIRED,
-                            CONFIRMATION_REJECTED ->
+                            CONFIRMATION_REJECTED,
+                            PHONE_NOT_REQUESTED,
+                            PHONE_SUBMISSION_ACTIVE,
+                            PHONE_WINDOW_CLOSED ->
                             HttpStatus.CONFLICT;
+                    case RESERVATION_PROCESS_NOT_FOUND -> HttpStatus.NOT_FOUND;
                     case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
                     default -> HttpStatus.SERVICE_UNAVAILABLE;
                 };

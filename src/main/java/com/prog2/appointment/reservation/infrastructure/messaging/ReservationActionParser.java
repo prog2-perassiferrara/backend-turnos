@@ -54,7 +54,8 @@ public final class ReservationActionParser {
             var selection = selection(dto, type);
             if ((type == ReservationActionType.CONFIRMED
                             || type == ReservationActionType.EXPIRED
-                            || type == ReservationActionType.INVALID)
+                            || type == ReservationActionType.INVALID
+                            || type == ReservationActionType.PHONE_REJECTED)
                     && !HoldDetails.identifier(dto.requestEventId())) {
                 throw new IllegalArgumentException();
             }
@@ -63,7 +64,18 @@ public final class ReservationActionParser {
                             type, correlation, dto.expiresAt(), dto.reservationId(), selection);
             // El orden de propiedades JSON y los campos adicionales no cambian la identidad del
             // hecho.
-            var content = new EventContent(dto.eventType(), dto.occurredAt(), dto.reason(), action);
+            var fingerprintAction =
+                    type == ReservationActionType.PHONE_REJECTED
+                            ? new ReservationAction(
+                                    ReservationActionType.OTHER,
+                                    correlation,
+                                    dto.expiresAt(),
+                                    dto.reservationId(),
+                                    selection)
+                            : action;
+            var content =
+                    new EventContent(
+                            dto.eventType(), dto.occurredAt(), dto.reason(), fingerprintAction);
             return new ReservationDelivery(
                     origin, action, body, hash(json.writeValueAsString(content)), null);
         } catch (RuntimeException _) {
@@ -72,6 +84,12 @@ public final class ReservationActionParser {
     }
 
     private ReservationSelection selection(ActionDto dto, ReservationActionType type) {
+        if (type == ReservationActionType.PHONE_REJECTED
+                && (!group.equals(dto.groupId())
+                        || dto.expiresAt() == null
+                        || !HoldDetails.identifier(dto.reason()))) {
+            throw new IllegalArgumentException();
+        }
         if (type == ReservationActionType.PHONE_REQUESTED
                 && (dto.expiresAt() == null || !"PHONE_NUMBER".equals(dto.requiredField()))) {
             throw new IllegalArgumentException();
@@ -93,6 +111,7 @@ public final class ReservationActionParser {
     private static ReservationActionType type(String eventType) {
         return switch (eventType) {
             case "AdditionalInformationRequested" -> ReservationActionType.PHONE_REQUESTED;
+            case "AdditionalInformationRejected" -> ReservationActionType.PHONE_REJECTED;
             case "AppointmentProcessExpired" -> ReservationActionType.EXPIRED;
             case "AppointmentProcessInvalid" -> ReservationActionType.INVALID;
             case "AppointmentConfirmed" -> ReservationActionType.CONFIRMED;

@@ -38,6 +38,7 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
     private KafkaMessageListenerContainer<String, String> container;
     private String bootstrap;
     private String topic;
+    private PhoneDestination phoneDestination;
     private boolean preparing;
     private boolean closed;
     private long nextPreparation = System.nanoTime();
@@ -98,11 +99,14 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         try {
             var assigned = access.getAccess().configuration();
             verifyMetadata(
-                    assigned.kafkaBootstrapServers(), assigned.kafkaAppointmentActionsTopic());
+                    assigned.kafkaBootstrapServers(),
+                    List.of(assigned.kafkaAppointmentActionsTopic(), assigned.kafkaAppointmentPhoneTopic()));
             start(
                     assigned.kafkaBootstrapServers(),
                     assigned.kafkaAppointmentActionsTopic(),
-                    assigned.kafkaConsumerGroupId());
+                    assigned.kafkaConsumerGroupId(),
+                    assigned.kafkaAppointmentPhoneTopic(),
+                    assigned.groupId());
             return true;
         } catch (RuntimeException _) {
             return false;
@@ -124,7 +128,8 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         return current != null && current.isRunning();
     }
 
-    private synchronized void start(String servers, String actions, String group) {
+    private synchronized void start(
+            String servers, String actions, String group, String phoneTopic, String groupId) {
         if (closed) {
             return;
         }
@@ -169,6 +174,7 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         handler.setCommitRecovered(false);
         next.setCommonErrorHandler(handler);
         next.setBeanName("reservation-actions");
+        phoneDestination = new PhoneDestination(servers, phoneTopic, groupId);
         bootstrap = servers;
         topic = actions;
         container = next;
@@ -181,6 +187,7 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         KafkaMessageListenerContainer<String, String> current;
         String servers;
         String actions;
+        String phones;
         synchronized (this) {
             if (closed) {
                 throw unavailable();
@@ -188,6 +195,7 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
             current = container;
             servers = bootstrap;
             actions = topic;
+            phones = phoneDestination == null ? null : phoneDestination.topic();
         }
         var partitions = current == null ? null : current.getAssignedPartitions();
         if (current == null
@@ -197,13 +205,13 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
             throw unavailable();
         }
         try {
-            verifyMetadata(servers, actions);
+            verifyMetadata(servers, List.of(actions, phones));
         } catch (RuntimeException _) {
             throw unavailable();
         }
     }
 
-    private void verifyMetadata(String servers, String actions) {
+    private void verifyMetadata(String servers, List<String> topics) {
         var settings =
                 Map.<String, Object>of(
                         "bootstrap.servers",
@@ -217,11 +225,13 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         var admin = Admin.create(settings);
         try {
             var description =
-                    admin.describeTopics(List.of(actions))
+                    admin.describeTopics(topics)
                             .allTopicNames()
                             .get(properties.metadataTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            if (description.get(actions).partitions().isEmpty()) {
-                throw unavailable();
+            for (String assigned : topics) {
+                if (description.get(assigned).partitions().isEmpty()) {
+                    throw unavailable();
+                }
             }
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
@@ -233,6 +243,15 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
             admin.close(Duration.ZERO);
         }
     }
+
+    /** Snapshot asignado retenido: publicar no exige volver a obtener el JWT REST. */
+    public synchronized PhoneDestination phoneDestination() {
+        if (closed || phoneDestination == null) throw unavailable();
+        return phoneDestination;
+    }
+
+    /** Datos mínimos del destino; no incluye credenciales ni referencias al consumidor. */
+    public record PhoneDestination(String bootstrap, String topic, String groupId) {}
 
     private static ReservationGatewayException unavailable() {
         return new ReservationGatewayException(

@@ -29,6 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestConstructor;
+import org.springframework.test.annotation.DirtiesContext;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
@@ -38,11 +39,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Comprueba arranque, migraciones, salud HTTP y rechazo de configuración inválida con MySQL real temporal.
- * Las credenciales y tablas son ficticias y exclusivas de test; no se utiliza la base de desarrollo.
+ * Comprueba arranque, migraciones, salud HTTP y rechazo de configuración inválida con MySQL real
+ * temporal. Las credenciales y tablas son ficticias y exclusivas de test; no se utiliza la base de
+ * desarrollo.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ExtendWith(OutputCaptureExtension.class)
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 class AppointmentApplicationTests {
@@ -204,8 +207,10 @@ class AppointmentApplicationTests {
         environment.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
         environment.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
         application.setEnvironment(environment);
-        String[] arguments = settings.entrySet().stream()
-                .map(entry -> "--" + entry.getKey() + "=" + entry.getValue()).toArray(String[]::new);
+        String[] arguments =
+                settings.entrySet().stream()
+                        .map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
+                        .toArray(String[]::new);
 
         assertThatThrownBy(() -> {
             try (var _ = application.run(arguments)) {

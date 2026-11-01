@@ -1,6 +1,18 @@
 package com.prog2.appointment.reservation.infrastructure.config;
 
 import java.time.Clock;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import com.prog2.appointment.reservation.application.usecases.SubmitReservationPhoneUseCaseImpl;
+import com.prog2.appointment.reservation.application.usecases.PublishPendingPhonesUseCaseImpl;
+import com.prog2.appointment.reservation.application.usecases.GetReservationProcessUseCaseImpl;
+import com.prog2.appointment.reservation.domain.ports.in.SubmitReservationPhoneUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.PublishPendingPhonesUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.GetReservationProcessUseCase;
+import com.prog2.appointment.reservation.domain.ports.out.CentralAppointmentGateway;
+import com.prog2.appointment.reservation.domain.ports.out.PhonePublicationGateway;
+import com.prog2.appointment.reservation.infrastructure.messaging.KafkaPhoneSubmissionAdapter;
+import com.prog2.appointment.reservation.infrastructure.messaging.PhoneSubmissionDispatcher;
+import com.prog2.appointment.reservation.infrastructure.client.adapter.WebClientCentralAppointmentAdapter;
 import java.util.concurrent.Executors;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
@@ -37,6 +49,7 @@ import tools.jackson.databind.json.JsonMapper;
  * integration.
  */
 @Configuration(proxyBeanMethods = false)
+@EnableScheduling
 public class ReservationConfiguration {
     @Bean
     ReservationProperties reservationProperties(Environment environment) {
@@ -124,6 +137,76 @@ public class ReservationConfiguration {
                 messaging,
                 clock.withZone(properties.timeZone()),
                 reservationProperties.attempts());
+    }
+
+    @Bean
+    SubmitReservationPhoneUseCase submitReservationPhoneUseCase(
+            ReservationProcessRepository repository,
+            TechnicalAccessProperties properties,
+            Clock clock) {
+        return new SubmitReservationPhoneUseCaseImpl(repository, properties.expectedGroup(), clock);
+    }
+
+    @Bean
+    KafkaPhoneSubmissionAdapter phonePublicationGateway(
+            ReservationKafkaChannel channel,
+            JsonMapper json,
+            Clock clock,
+            ReservationProperties properties) {
+        return new KafkaPhoneSubmissionAdapter(
+                channel, json, clock, properties.phonePublishTimeout());
+    }
+
+    @Bean
+    PublishPendingPhonesUseCase publishPendingPhonesUseCase(
+            ReservationProcessRepository repository,
+            PhonePublicationGateway gateway,
+            Clock clock,
+            ReservationProperties properties) {
+        return new PublishPendingPhonesUseCaseImpl(
+                repository,
+                gateway,
+                clock,
+                properties.attempts(),
+                properties.retryDelay(),
+                properties.preparationCooldown());
+    }
+
+    @Bean
+    PhoneSubmissionDispatcher phoneSubmissionDispatcher(PublishPendingPhonesUseCase publish) {
+        return new PhoneSubmissionDispatcher(publish);
+    }
+
+    @Bean
+    CentralAppointmentGateway centralAppointmentGateway(
+            TechnicalAccessProperties properties,
+            TechnicalAccessUseCase access,
+            ReservationProperties reservations) {
+        var timeout = reservations.httpTimeout();
+        var transport =
+                HttpClient.create()
+                        .disableRetry(true)
+                        .followRedirect(false)
+                        .option(
+                                ChannelOption.CONNECT_TIMEOUT_MILLIS,
+                                Math.toIntExact(timeout.toMillis()))
+                        .responseTimeout(timeout);
+        var client =
+                WebClient.builder()
+                        .baseUrl(properties.centralBaseUrl().toString())
+                        .clientConnector(new ReactorClientHttpConnector(transport))
+                        .build();
+        return new WebClientCentralAppointmentAdapter(client, access, timeout);
+    }
+
+    @Bean
+    GetReservationProcessUseCase getReservationProcessUseCase(
+            ReservationProcessRepository repository,
+            CentralAppointmentGateway central,
+            Clock clock,
+            ReservationProperties properties) {
+        return new GetReservationProcessUseCaseImpl(
+                repository, central, clock, properties.resultVerificationDelay());
     }
 
     @Bean
