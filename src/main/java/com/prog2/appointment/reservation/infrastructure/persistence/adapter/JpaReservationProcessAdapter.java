@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.adapter;
 
+import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
+
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
@@ -34,6 +36,11 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
 
     public JpaReservationProcessAdapter(TransactionalReservationStore store) {
         this.store = store;
+    }
+
+    @Override
+    public OwnReservationPage readOwn(long ownerId, int page, int size) {
+        return read(() -> store.readOwn(ownerId, page, size));
     }
 
     @Override

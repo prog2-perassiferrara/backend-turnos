@@ -24,7 +24,8 @@ public record ReservationProcess(
         long version,
         UUID writeId,
         Instant closedAt,
-        boolean abandonmentPending) {
+        boolean abandonmentPending,
+        ProfessionalName professionalName) {
     public ReservationProcess {
         Objects.requireNonNull(id);
         Objects.requireNonNull(patient);
@@ -50,7 +51,8 @@ public record ReservationProcess(
                 0,
                 UUID.randomUUID(),
                 null,
-                false);
+                false,
+                null);
     }
 
     public long ownerId() {
@@ -311,6 +313,29 @@ public record ReservationProcess(
     /** Aplica evidencia REST sobre la versión actual sin fabricar eventos ni reabrir cierres. */
     public ReservationProcess reconcile(CentralAppointment evidence, Instant now) {
         if (!evidence.belongsTo(this)) return this;
+        var result = reconcileState(evidence, now);
+        return result.withProfessionalName(evidence.professionalName());
+    }
+
+    private ReservationProcess withProfessionalName(ProfessionalName name) {
+        if (professionalName != null || name == null) return this;
+        return new ReservationProcess(
+                id,
+                patient,
+                selection,
+                phase,
+                hold,
+                requestEventId,
+                reservationId,
+                reasonCode,
+                version,
+                writeId,
+                closedAt,
+                abandonmentPending,
+                name);
+    }
+
+    private ReservationProcess reconcileState(CentralAppointment evidence, Instant now) {
         if (phase.isFinal()
                 && !(phase == ReservationPhase.CONFIRMED
                         && evidence.state() == CentralAppointmentState.CANCELLED)) return this;
@@ -389,7 +414,8 @@ public record ReservationProcess(
                 version,
                 writeId,
                 closed,
-                pendingAbandonment);
+                pendingAbandonment,
+                professionalName);
     }
 
     @Override

@@ -97,6 +97,10 @@ final class CommitFaultDataSource extends AbstractDataSource {
         }
         if (selected == Mode.AFTER) {
             target.commit();
+        } else {
+            // Una conexión perdida antes del commit descarta su transacción en MySQL.
+            // La excepción simulada por sí sola dejaría bloqueos que impiden el reintento.
+            target.rollback();
         }
         throw new SQLException("Fictional JDBC commit result unavailable", "08006");
     }

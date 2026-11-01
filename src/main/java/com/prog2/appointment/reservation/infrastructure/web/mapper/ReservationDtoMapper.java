@@ -1,5 +1,9 @@
 package com.prog2.appointment.reservation.infrastructure.web.mapper;
 
+import com.prog2.appointment.reservation.domain.model.OwnReservations;
+import com.prog2.appointment.reservation.infrastructure.web.dto.OwnReservationsResponse;
+import com.prog2.appointment.reservation.infrastructure.web.dto.ReservationHistoryResponse;
+
 import java.time.format.DateTimeFormatter;
 import com.prog2.appointment.reservation.domain.model.ReservationStatus;
 import org.springframework.stereotype.Component;
@@ -15,6 +19,26 @@ import com.prog2.appointment.reservation.infrastructure.web.dto.StartReservation
 @Component
 public final class ReservationDtoMapper {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    /**
+     * @return envelope estable, independiente de los tipos Page de Spring y de IDs centrales
+     */
+    public OwnReservationsResponse toResponse(OwnReservations result) {
+        var history =
+                new ReservationHistoryResponse(
+                        result.history().stream().map(this::toResponse).toList(),
+                        result.page(),
+                        result.size(),
+                        result.totalElements(),
+                        result.totalElements() / result.size()
+                                + (result.totalElements() % result.size() == 0 ? 0 : 1));
+        return new OwnReservationsResponse(
+                result.pending() == null ? null : toResponse(result.pending()),
+                history,
+                result.verificationStatus().name(),
+                result.verifiedAt(),
+                result.warningCode());
+    }
 
     public StartReservationRequest toRequest(StartReservationBody body) {
         return new StartReservationRequest(
@@ -50,6 +74,8 @@ public final class ReservationDtoMapper {
                 status.canSubmitPhone(),
                 status.verificationStatus().name(),
                 status.verifiedAt(),
-                status.warningCode());
+                status.warningCode(),
+                process.professionalName() == null ? null : process.professionalName().firstName(),
+                process.professionalName() == null ? null : process.professionalName().lastName());
     }
 }

@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.service;
 
+import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,6 +55,29 @@ public class TransactionalReservationStore {
         this.mapper = mapper;
         this.clock = clock;
         this.phones = phones;
+    }
+
+    /** Una sola instantánea SQL para que un cierre concurrente no duplique el pendiente. */
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            readOnly = true,
+            isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,
+            timeout = 10)
+    public OwnReservationPage readOwn(long ownerId, int page, int size) {
+        OwnReservationPage.validate(page, size);
+        var pending = processes.findPending(ownerId).map(mapper::toDomain).orElse(null);
+        var phone =
+                pending == null
+                        ? null
+                        : phones.latest(pending.id().toString()).map(mapper::toDomain).orElse(null);
+        var history = processes.history(ownerId, PageRequest.of(page, size));
+        return new OwnReservationPage(
+                pending,
+                phone,
+                history.getContent().stream().map(mapper::toDomain).toList(),
+                history.getTotalElements(),
+                page,
+                size);
     }
 
     /** Aceptación atómica: propietario, UUID histórico y exclusión activa se comprueban aquí. */

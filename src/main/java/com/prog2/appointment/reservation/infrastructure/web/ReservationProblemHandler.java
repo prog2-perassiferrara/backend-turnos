@@ -71,7 +71,8 @@ public final class ReservationProblemHandler {
             java.time.Instant recheckAt) {
         HttpStatus status =
                 switch (failure) {
-                    case INVALID_RESERVATION_SELECTION,
+                    case INVALID_RESERVATION_PAGE,
+                            INVALID_RESERVATION_SELECTION,
                             PROFILE_NOT_RESERVABLE,
                             INVALID_PHONE_NUMBER ->
                             HttpStatus.BAD_REQUEST;

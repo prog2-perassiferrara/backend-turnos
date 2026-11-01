@@ -862,6 +862,7 @@ class ReservationPhoneIntegrationTests {
                 org.flywaydb.core.Flyway.configure()
                         .dataSource(source)
                         .locations("classpath:db/migration")
+                        .target("4")
                         .load();
         assertThat(migrated.migrate().migrationsExecuted).isEqualTo(1);
         migrated.validate();

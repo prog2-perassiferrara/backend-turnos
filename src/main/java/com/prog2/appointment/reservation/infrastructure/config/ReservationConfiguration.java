@@ -1,5 +1,8 @@
 package com.prog2.appointment.reservation.infrastructure.config;
 
+import com.prog2.appointment.reservation.application.usecases.ListOwnReservationsUseCaseImpl;
+import com.prog2.appointment.reservation.domain.ports.in.ListOwnReservationsUseCase;
+
 import java.time.Clock;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import com.prog2.appointment.reservation.application.usecases.SubmitReservationPhoneUseCaseImpl;
@@ -51,6 +54,14 @@ import tools.jackson.databind.json.JsonMapper;
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 public class ReservationConfiguration {
+    @Bean
+    ListOwnReservationsUseCase listOwnReservationsUseCase(
+            ReservationProcessRepository repository,
+            CentralAppointmentGateway central,
+            Clock clock) {
+        return new ListOwnReservationsUseCaseImpl(repository, central, clock);
+    }
+
     @Bean
     ReservationProperties reservationProperties(Environment environment) {
         return ReservationProperties.from(environment);

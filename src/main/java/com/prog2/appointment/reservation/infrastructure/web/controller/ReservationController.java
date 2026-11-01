@@ -1,5 +1,10 @@
 package com.prog2.appointment.reservation.infrastructure.web.controller;
 
+import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
+import com.prog2.appointment.reservation.domain.ports.in.ListOwnReservationsUseCase;
+import com.prog2.appointment.reservation.infrastructure.web.dto.OwnReservationsResponse;
+import org.springframework.web.bind.annotation.RequestParam;
+
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,16 +34,48 @@ public final class ReservationController {
     private final ReservationDtoMapper mapper;
     private final SubmitReservationPhoneUseCase submit;
     private final GetReservationProcessUseCase get;
+    private final ListOwnReservationsUseCase list;
 
     public ReservationController(
             StartReservationUseCase start,
             ReservationDtoMapper mapper,
             SubmitReservationPhoneUseCase submit,
-            GetReservationProcessUseCase get) {
+            GetReservationProcessUseCase get,
+            ListOwnReservationsUseCase list) {
         this.start = start;
         this.mapper = mapper;
         this.submit = submit;
         this.get = get;
+        this.list = list;
+    }
+
+    /**
+     * @return pendiente e historial propios; el propietario procede exclusivamente del JWT
+     */
+    @GetMapping(path = "/api/reservations", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<OwnReservationsResponse> list(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(defaultValue = "0") String page,
+            @RequestParam(defaultValue = "20") String size) {
+        int selectedPage;
+        int selectedSize;
+        try {
+            selectedPage = Integer.parseInt(page);
+            selectedSize = Integer.parseInt(size);
+        } catch (NumberFormatException _) {
+            throw new ReservationOperationException(
+                    com.prog2.appointment.reservation.domain.enums.ReservationFailure
+                            .INVALID_RESERVATION_PAGE,
+                    null);
+        }
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(
+                        mapper.toResponse(
+                                list.list(
+                                        Long.parseLong(jwt.getSubject()),
+                                        selectedPage,
+                                        selectedSize)));
     }
 
     /**

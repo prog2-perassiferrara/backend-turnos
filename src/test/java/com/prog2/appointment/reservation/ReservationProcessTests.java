@@ -217,7 +217,8 @@ class ReservationProcessTests {
                         phone.version(),
                         phone.writeId(),
                         null,
-                        true);
+                        true,
+                        null);
         var confirmed =
                 abandoning.apply(action(ReservationActionType.CONFIRMED, "confirmed-1"), NOW);
         assertThat(confirmed.phase()).isEqualTo(ReservationPhase.CONFIRMED);

@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.mapper;
 
+import com.prog2.appointment.reservation.domain.model.ProfessionalName;
+
 import java.util.UUID;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 import com.prog2.appointment.reservation.infrastructure.persistence.entity.PhoneSubmissionEntity;
@@ -62,6 +64,8 @@ public final class ReservationPersistenceMapper {
                 entity.getVersion(),
                 UUID.fromString(entity.getWriteId()),
                 entity.getClosedAt(),
-                entity.getAbandonmentPending());
+                entity.getAbandonmentPending(),
+                ProfessionalName.from(
+                        entity.getProfessionalFirstName(), entity.getProfessionalLastName()));
     }
 }

@@ -16,4 +16,6 @@ public record CentralAppointmentResponse(
         LocalDate appointmentDate,
         LocalTime startTime,
         Long professionalId,
-        String status) {}
+        String status,
+        String professionalFirstName,
+        String professionalLastName) {}
