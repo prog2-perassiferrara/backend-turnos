@@ -65,7 +65,8 @@ class KafkaPhoneSubmissionTests {
                         Clock.fixed(ReservationProcessTests.NOW, ZoneOffset.UTC),
                         Duration.ofMillis(100));
         producer.close();
-        assertThatThrownBy(() -> producer.publish(SubmitReservationPhoneTests.submission()))
+        var phone = SubmitReservationPhoneTests.submission();
+        assertThatThrownBy(() -> producer.publish(phone))
                 .isInstanceOf(ReservationGatewayException.class);
         verifyNoInteractions(channel);
     }

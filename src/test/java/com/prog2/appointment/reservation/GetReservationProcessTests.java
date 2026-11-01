@@ -37,7 +37,10 @@ class GetReservationProcessTests {
         when(repository.find(process.id())).thenReturn(Optional.of(process));
         assertThat(useCase(0).get(process.ownerId(), process.id()).verificationStatus())
                 .isEqualTo(VerificationStatus.LOCAL);
-        assertThatThrownBy(() -> useCase(0).get(process.ownerId() + 1, process.id()))
+        var reader = useCase(0);
+        long foreignOwner = process.ownerId() + 1;
+        var processId = process.id();
+        assertThatThrownBy(() -> reader.get(foreignOwner, processId))
                 .isInstanceOf(ReservationOperationException.class);
         verifyNoInteractions(central);
     }

@@ -126,7 +126,8 @@ class CentralAppointmentGatewayTests {
     void statusErrorsAreSingleAttemptsAndUnauthorizedOnlyInvalidatesTheUsedToken(int status) {
         provider.appointmentsOverride.set(
                 exchange -> TestIntegrationSupport.respond(exchange, status, "{}"));
-        assertThatThrownBy(() -> gateway.find(SubmitReservationPhoneTests.waiting()))
+        var process = SubmitReservationPhoneTests.waiting();
+        assertThatThrownBy(() -> gateway.find(process))
                 .isInstanceOf(ReservationGatewayException.class);
         assertThat(provider.appointmentQueries).hasValue(1);
         if (status == 401) verify(access).rejectAccess(provider.token);
@@ -152,7 +153,8 @@ class CentralAppointmentGatewayTests {
                 });
         try {
             var bounded = client(Duration.ofMillis(150));
-            assertThatThrownBy(() -> bounded.find(SubmitReservationPhoneTests.waiting()))
+            var process = SubmitReservationPhoneTests.waiting();
+            assertThatThrownBy(() -> bounded.find(process))
                     .isInstanceOf(ReservationGatewayException.class);
             assertThat(provider.appointmentQueries).hasValue(1);
         } finally {

@@ -155,12 +155,10 @@ class SubmitReservationPhoneTests {
                         repository,
                         "fictional-group",
                         Clock.fixed(ReservationProcessTests.NOW, ZoneOffset.UTC));
-        assertThatThrownBy(
-                        () ->
-                                useCase.submit(
-                                        process.ownerId(),
-                                        process.id(),
-                                        new SubmitPhoneRequest(phone.id(), "123")))
+        long ownerId = process.ownerId();
+        var processId = process.id();
+        var invalidRequest = new SubmitPhoneRequest(phone.id(), "123");
+        assertThatThrownBy(() -> useCase.submit(ownerId, processId, invalidRequest))
                 .isInstanceOf(ReservationOperationException.class);
         verify(repository, never()).submitPhone(anyLong(), any(), any(), any(), any());
         var normalized = new SubmitPhoneRequest(phone.id(), "+5492615551234");

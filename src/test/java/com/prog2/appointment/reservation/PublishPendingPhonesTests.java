@@ -1,6 +1,5 @@
 package com.prog2.appointment.reservation;
 
-import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.prog2.appointment.reservation.application.usecases.PublishPendingPhonesUseCaseImpl;

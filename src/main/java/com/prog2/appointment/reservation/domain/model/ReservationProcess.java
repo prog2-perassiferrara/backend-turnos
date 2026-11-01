@@ -150,9 +150,7 @@ public record ReservationProcess(
                     now);
         }
         if (phase == ReservationPhase.WAITING_FOR_PHONE
-                || phase == ReservationPhase.WAITING_FOR_REQUEST
-                || phase == ReservationPhase.PHONE_QUEUED
-                || phase == ReservationPhase.WAITING_FOR_RESULT) {
+                || phase == ReservationPhase.WAITING_FOR_REQUEST) {
             return this;
         }
         if (hold == null) {

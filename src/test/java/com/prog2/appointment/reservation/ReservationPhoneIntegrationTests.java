@@ -575,7 +575,7 @@ class ReservationPhoneIntegrationTests {
         publisher.enabled.set(true);
         phase(id, ReservationPhase.WAITING_FOR_RESULT);
         var sent = records(request);
-        assertThat(sent.size()).isGreaterThanOrEqualTo(2);
+        assertThat(sent).hasSizeGreaterThanOrEqualTo(2);
         assertThat(sent.stream().map(ConsumerRecord::value).distinct()).hasSize(1);
         assertThat(sent.stream().map(ConsumerRecord::key).distinct()).hasSize(1);
     }
@@ -1022,6 +1022,11 @@ class ReservationPhoneIntegrationTests {
             try (var admin =
                     Admin.create(Map.of("bootstrap.servers", KAFKA.getBootstrapServers()))) {
                 assertThat(admin.listTopics().names().get(5, TimeUnit.SECONDS))
+                        .isNotEmpty()
+                        .contains(
+                                ReservationTestSupport.TOPIC,
+                                ReservationTestSupport.PHONE_TOPIC,
+                                secondTopic)
                         .doesNotContain("missing-phone-topic");
             }
             org.mockito.Mockito.when(assigned.phoneDestination())
