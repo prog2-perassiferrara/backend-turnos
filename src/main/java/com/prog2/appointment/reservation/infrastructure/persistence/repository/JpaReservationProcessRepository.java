@@ -4,6 +4,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
+import java.util.List;
+import java.time.Instant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,11 @@ public interface JpaReservationProcessRepository
             value = "SELECT * FROM reservation_process WHERE active_owner_id = :owner",
             nativeQuery = true)
     Optional<ReservationProcessEntity> findPending(@Param("owner") long owner);
+
+    @Query(value = "SELECT id FROM reservation_process WHERE cancellation_status = 'PENDING'"
+            + " AND cancellation_attempts < 3 AND cancellation_next_attempt_at <= :now"
+            + " ORDER BY cancellation_next_attempt_at, id", nativeQuery = true)
+    List<String> dueCancellations(@Param("now") Instant now, Pageable page);
 
     Optional<ReservationProcessEntity> findByCentralProcessId(String centralProcessId);
 

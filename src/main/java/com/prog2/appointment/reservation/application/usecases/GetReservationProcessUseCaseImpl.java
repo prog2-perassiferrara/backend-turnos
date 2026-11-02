@@ -53,9 +53,11 @@ public final class GetReservationProcessUseCaseImpl implements GetReservationPro
                 phone != null
                         && phone.publishedAt() != null
                         && !now.isBefore(phone.publishedAt().plus(verificationDelay));
+        boolean cancelling = process.cancellation() != null && process.cancellation().state()
+                != com.prog2.appointment.reservation.domain.enums.CancellationState.RESOLVED;
         if (process.hold() == null
-                || process.phase().isFinal()
-                || !(uncertain
+                || process.phase().isFinal() && !cancelling
+                || !(cancelling || uncertain
                         || overdue
                         || process.phase() == ReservationPhase.WAITING_FOR_RESULT && delayed)) {
             return ReservationStatus.local(process, phone, now);

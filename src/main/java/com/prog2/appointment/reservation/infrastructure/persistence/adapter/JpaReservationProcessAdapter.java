@@ -3,6 +3,10 @@ package com.prog2.appointment.reservation.infrastructure.persistence.adapter;
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
 import java.sql.SQLException;
+import com.prog2.appointment.reservation.domain.enums.CancellationKind;
+import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
+import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
+import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -199,6 +203,61 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
     @Override
     public ReservationProcess reconcile(UUID id, CentralAppointment evidence, Instant now) {
         return write(() -> store.reconcile(id, evidence, now));
+    }
+
+    @Override
+    public CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
+            Integer retryVersion, Instant now) {
+        UUID writeId = UUID.randomUUID();
+        return cancellationWrite(
+                () -> store.requestCancellation(ownerId, id, kind, retryVersion, now, writeId),
+                () -> committedCancellation(ownerId, id, kind, retryVersion, writeId));
+    }
+
+    private CancellationAcceptance committedCancellation(long ownerId, UUID id, CancellationKind kind,
+            Integer retryVersion, UUID writeId) {
+        var current = find(id).filter(value -> value.ownerId() == ownerId)
+                .orElseThrow(() -> new ReservationCancellationException(
+                        ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
+        var progress = current.cancellation();
+        if (progress == null || progress.kind() != kind
+                || retryVersion != null && progress.retryVersion() <= retryVersion) {
+            throw new ReservationStorageException();
+        }
+        return new CancellationAcceptance(current, current.writeId().equals(writeId));
+    }
+
+    @Override
+    public List<UUID> dueCancellations(Instant now, int limit) {
+        return read(() -> store.dueCancellations(now, limit));
+    }
+
+    @Override
+    public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now, Duration budget) {
+        UUID writeId = UUID.randomUUID();
+        return cancellationWrite(() -> store.beginCancellationAttempt(id, now, budget, writeId),
+                () -> find(id).filter(value -> value.writeId().equals(writeId)));
+    }
+
+    @Override
+    public ReservationProcess confirmCancellation(UUID id, CancellationEvidence evidence, Instant now) {
+        return cancellationWrite(() -> store.confirmCancellation(id, evidence, now),
+                () -> find(id).filter(value -> value.phase() == ReservationPhase.CANCELLED
+                        && evidence.belongsTo(value)).orElseThrow(ReservationStorageException::new));
+    }
+
+    /** Repite solo transacciones locales revertidas, nunca el POST central. */
+    private static <T> T cancellationWrite(Supplier<T> operation, Supplier<T> ambiguous) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return operation.get();
+            } catch (OptimisticLockingFailureException _) {
+                // Releer y volver a evaluar las condiciones en otra transacción.
+            } catch (DataAccessException | TransactionException _) {
+                return ambiguous.get();
+            }
+        }
+        throw new ReservationStorageException();
     }
 
     private static <T> T read(Supplier<T> operation) {

@@ -23,4 +23,9 @@ public record ReservationProcessResponse(
         Instant verifiedAt,
         String warningCode,
         String professionalFirstName,
-        String professionalLastName) {}
+        String professionalLastName,
+        CancellationView cancellation) {
+    /** Vista propia de la intención; RESOLVED no sustituye al estado final de la reserva. */
+    public record CancellationView(String kind, String status, Instant requestedAt,
+            String lastFailure, boolean canRetry, Integer retryVersion) {}
+}

@@ -3,6 +3,9 @@ package com.prog2.appointment.reservation.infrastructure.persistence.mapper;
 import com.prog2.appointment.reservation.domain.model.ProfessionalName;
 
 import java.util.UUID;
+import com.prog2.appointment.reservation.domain.model.CancellationProgress;
+import com.prog2.appointment.reservation.domain.enums.CancellationKind;
+import com.prog2.appointment.reservation.domain.enums.CancellationState;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 import com.prog2.appointment.reservation.infrastructure.persistence.entity.PhoneSubmissionEntity;
 import org.springframework.stereotype.Component;
@@ -66,6 +69,12 @@ public final class ReservationPersistenceMapper {
                 entity.getClosedAt(),
                 entity.getAbandonmentPending(),
                 ProfessionalName.from(
-                        entity.getProfessionalFirstName(), entity.getProfessionalLastName()));
+                        entity.getProfessionalFirstName(), entity.getProfessionalLastName()),
+                entity.getCancellationKind() == null ? null : new CancellationProgress(
+                        CancellationKind.valueOf(entity.getCancellationKind()),
+                        CancellationState.valueOf(entity.getCancellationStatus()),
+                        entity.getCancellationRequestedAt(), entity.getCancellationRetryVersion(),
+                        entity.getCancellationAttempts(), entity.getCancellationNextAttemptAt(),
+                        entity.getCancellationLastFailure()));
     }
 }

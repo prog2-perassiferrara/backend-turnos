@@ -5,6 +5,7 @@ import com.prog2.appointment.reservation.infrastructure.web.dto.OwnReservationsR
 import com.prog2.appointment.reservation.infrastructure.web.dto.ReservationHistoryResponse;
 
 import java.time.format.DateTimeFormatter;
+import java.time.Clock;
 import com.prog2.appointment.reservation.domain.model.ReservationStatus;
 import org.springframework.stereotype.Component;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
@@ -18,6 +19,12 @@ import com.prog2.appointment.reservation.infrastructure.web.dto.StartReservation
  */
 @Component
 public final class ReservationDtoMapper {
+    private final Clock clock;
+
+    public ReservationDtoMapper(Clock clock) {
+        this.clock = clock;
+    }
+
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     /**
@@ -68,7 +75,7 @@ public final class ReservationDtoMapper {
                 process.hold() == null ? null : process.hold().expiresAt(),
                 process.reasonCode(),
                 status.phoneRequestId(),
-                process.requestEventId() == null || process.phase().isFinal()
+                process.requestEventId() == null || process.phase().isFinal() || process.abandonmentPending()
                         ? null
                         : "PHONE_NUMBER",
                 status.canSubmitPhone(),
@@ -76,6 +83,16 @@ public final class ReservationDtoMapper {
                 status.verifiedAt(),
                 status.warningCode(),
                 process.professionalName() == null ? null : process.professionalName().firstName(),
-                process.professionalName() == null ? null : process.professionalName().lastName());
+                process.professionalName() == null ? null : process.professionalName().lastName(),
+                cancellation(process));
     }
+    private ReservationProcessResponse.CancellationView cancellation(ReservationProcess process) {
+        var progress = process.cancellation();
+        if (progress == null) return null;
+        boolean canRetry = progress.canRetry(clock.instant());
+        return new ReservationProcessResponse.CancellationView(progress.kind().name(),
+                progress.state().name(), progress.requestedAt(), progress.lastFailure(), canRetry,
+                canRetry ? progress.retryVersion() : null);
+    }
+
 }

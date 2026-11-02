@@ -42,12 +42,12 @@
 
 - La cancelación central de una reserva ya cancelada es idempotente.
 - No requiere consultar Catálogo para utilizar los identificadores propios de la reserva.
-- La aclaración docente indica que la cancelación libera el horario; otra operación concurrente puede volver a ocuparlo.
-- Abandonar un proceso todavía pendiente se describe aparte en CU-10 por su objetivo y precondiciones. El profesor confirmó que se puede utilizar la operación de cancelar reserva para cancelar holds.
+- Una cancelación verificada no garantiza que el horario siga disponible frente a otra operación concurrente.
+- Abandonar un proceso todavía pendiente se describe aparte en CU-10 por su objetivo y precondiciones. La cancelación central requiere una reserva confirmada según el anexo 13.1.
 - La confirmación termina la creación de la reserva, pero no impide una cancelación posterior autorizada. `CONFIRMED` a `CANCELLED` es una transición válida, no la reapertura del proceso de creación; una confirmación tardía no revierte una cancelación ya verificada.
 
 ## Fuentes y pendientes
 
-**Fuentes:** [anexo, secciones 12, 13.1 y 15.10](../../../INTEGRATION_REFERENCE-v2.md); [aclaración docente registrada](README.md).
+**Fuentes:** [anexo, secciones 12, 13.1 y 15.10](../../../INTEGRATION_REFERENCE-v2.md); [decisiones registradas](README.md).
 
-**Pendiente para la SPEC:** presentación del motivo opcional y de la cancelación pendiente de verificación.
+**Decisiones confirmadas:** sin motivo; intención pendiente diferenciada del resultado central y recuperación acotada según la SPEC conjunta.

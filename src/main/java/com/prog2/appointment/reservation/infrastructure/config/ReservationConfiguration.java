@@ -4,6 +4,15 @@ import com.prog2.appointment.reservation.application.usecases.ListOwnReservation
 import com.prog2.appointment.reservation.domain.ports.in.ListOwnReservationsUseCase;
 
 import java.time.Clock;
+import com.prog2.appointment.reservation.domain.ports.in.CancelReservationUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.AbandonReservationUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase;
+import com.prog2.appointment.reservation.domain.ports.out.ReservationCancellationGateway;
+import com.prog2.appointment.reservation.application.usecases.CancelReservationUseCaseImpl;
+import com.prog2.appointment.reservation.application.usecases.AbandonReservationUseCaseImpl;
+import com.prog2.appointment.reservation.application.usecases.RecoverReservationCancellationsUseCaseImpl;
+import com.prog2.appointment.reservation.infrastructure.client.adapter.WebClientReservationCancellationAdapter;
+import com.prog2.appointment.reservation.infrastructure.scheduling.CancellationDispatcher;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import com.prog2.appointment.reservation.application.usecases.SubmitReservationPhoneUseCaseImpl;
 import com.prog2.appointment.reservation.application.usecases.PublishPendingPhonesUseCaseImpl;
@@ -54,6 +63,43 @@ import tools.jackson.databind.json.JsonMapper;
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 public class ReservationConfiguration {
+    @Bean
+    CancelReservationUseCase cancelReservationUseCase(ReservationProcessRepository repository,
+            RecoverReservationCancellationsUseCase recover, Clock clock) {
+        return new CancelReservationUseCaseImpl(repository, recover, clock);
+    }
+
+    @Bean
+    AbandonReservationUseCase abandonReservationUseCase(ReservationProcessRepository repository,
+            RecoverReservationCancellationsUseCase recover, Clock clock) {
+        return new AbandonReservationUseCaseImpl(repository, recover, clock);
+    }
+
+    @Bean
+    RecoverReservationCancellationsUseCase recoverReservationCancellationsUseCase(
+            ReservationProcessRepository repository, CentralAppointmentGateway central,
+            ReservationCancellationGateway cancellation, Clock clock, ReservationProperties properties) {
+        return new RecoverReservationCancellationsUseCaseImpl(repository, central, cancellation, clock,
+                properties.httpTimeout(), properties.retryDelay(), properties.preparationCooldown());
+    }
+
+    @Bean
+    CancellationDispatcher cancellationDispatcher(RecoverReservationCancellationsUseCase recover) {
+        return new CancellationDispatcher(recover);
+    }
+
+    @Bean
+    ReservationCancellationGateway reservationCancellationGateway(TechnicalAccessProperties access,
+            TechnicalAccessUseCase session, ReservationProperties properties) {
+        var timeout = properties.httpTimeout();
+        var transport = HttpClient.create().disableRetry(true).followRedirect(false)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Math.toIntExact(timeout.toMillis()))
+                .responseTimeout(timeout);
+        var client = WebClient.builder().baseUrl(access.centralBaseUrl().toString())
+                .clientConnector(new ReactorClientHttpConnector(transport)).build();
+        return new WebClientReservationCancellationAdapter(client, session, timeout);
+    }
+
     @Bean
     ListOwnReservationsUseCase listOwnReservationsUseCase(
             ReservationProcessRepository repository,
