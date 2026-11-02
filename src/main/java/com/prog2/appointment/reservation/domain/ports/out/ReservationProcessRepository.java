@@ -49,6 +49,28 @@ public interface ReservationProcessRepository {
      */
     ReservationProcess update(UUID id, UnaryOperator<ReservationProcess> change);
 
+    /**
+     * @param id hold local conocido
+     * @param now instante de reclamación, anterior al vencimiento
+     * @return permiso propio acreditado HELD a CONFIRMING; vacío nunca permite emitir el POST
+     */
+    Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now);
+
+    /** @return hasta limit pendientes elegibles, sin seleccionar históricos cerrados ni trabajo de cancelación activo */
+    List<UUID> dueRecovery(Instant now, Duration initialDelay, int limit);
+
+    /**
+     * Conserva el presupuesto de revisión y la próxima fecha antes de consultar cátedra.
+     * @return progreso actual reclamado; no concede permiso para un POST
+     */
+    Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts, Duration retry, Duration cooldown);
+
+    /** Difiere un trabajo que sigue activo, sin gastar intentos ni modificar su fase. */
+    void deferRecovery(UUID id, Instant nextAttempt);
+
+    /** Reprocesa hasta limit recibos válidos diferidos cuya asociación local ya existe. */
+    void replayDeferredKnown(int limit);
+
     /** Guarda recibo y cambio juntos; una repetición nunca reaplica los efectos confirmados. */
     void accept(ReservationDelivery delivery);
 

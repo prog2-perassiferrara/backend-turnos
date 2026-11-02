@@ -130,6 +130,37 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
     }
 
     @Override
+    public Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now) {
+        UUID writeId = UUID.randomUUID();
+        return cancellationWrite(() -> store.beginInitialConfirmation(id, now, writeId),
+                () -> find(id).filter(value -> value.writeId().equals(writeId)
+                        && value.phase() == ReservationPhase.CONFIRMING));
+    }
+
+    @Override
+    public List<UUID> dueRecovery(Instant now, Duration initialDelay, int limit) {
+        return read(() -> store.dueRecovery(now, initialDelay, limit));
+    }
+
+    @Override
+    public Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts,
+            Duration retry, Duration cooldown) {
+        return write(() -> store.beginRecovery(id, now, attempts, retry, cooldown));
+    }
+
+    @Override
+    public void deferRecovery(UUID id, Instant nextAttempt) {
+        write(() -> { store.deferRecovery(id, nextAttempt); return null; });
+    }
+
+    @Override
+    public void replayDeferredKnown(int limit) {
+        for (var id : read(() -> store.deferredKnown(limit))) {
+            write(() -> { store.replayDeferred(id); return null; });
+        }
+    }
+
+    @Override
     public PhoneResult submitPhone(
             long ownerId, UUID processId, SubmitPhoneRequest request, String groupId, Instant now) {
         for (int attempt = 0; attempt < 3; attempt++) {

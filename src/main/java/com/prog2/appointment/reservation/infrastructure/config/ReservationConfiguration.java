@@ -1,9 +1,17 @@
 package com.prog2.appointment.reservation.infrastructure.config;
 
+import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
+import com.prog2.appointment.reservation.application.usecases.RecoverReservationProcessesUseCaseImpl;
+import com.prog2.appointment.reservation.domain.model.ReservationRecoveryPolicy;
+import com.prog2.appointment.reservation.infrastructure.scheduling.ReservationRecoveryDispatcher;
+
+
 import com.prog2.appointment.reservation.application.usecases.ListOwnReservationsUseCaseImpl;
 import com.prog2.appointment.reservation.domain.ports.in.ListOwnReservationsUseCase;
 
 import java.time.Clock;
+import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
+import com.prog2.appointment.reservation.infrastructure.concurrency.InMemoryReservationExecutionGuard;
 import com.prog2.appointment.reservation.domain.ports.in.CancelReservationUseCase;
 import com.prog2.appointment.reservation.domain.ports.in.AbandonReservationUseCase;
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase;
@@ -177,12 +185,33 @@ public class ReservationConfiguration {
     }
 
     @Bean
+    ReservationExecutionGuard reservationExecutionGuard() {
+        return new InMemoryReservationExecutionGuard();
+    }
+
+    @Bean
+    RecoverReservationProcessesUseCase recoverReservationProcessesUseCase(
+            ReservationProcessRepository repository, CentralAppointmentGateway central,
+            StartReservationUseCase start, ReservationExecutionGuard guard, Clock clock,
+            ReservationProperties properties) {
+        return new RecoverReservationProcessesUseCaseImpl(repository, central, start, guard, clock,
+                new ReservationRecoveryPolicy(properties.attempts(), properties.retryDelay(),
+                        properties.preparationCooldown(), properties.resultVerificationDelay()));
+    }
+
+    @Bean
+    ReservationRecoveryDispatcher reservationRecoveryDispatcher(RecoverReservationProcessesUseCase recover) {
+        return new ReservationRecoveryDispatcher(recover);
+    }
+
+    @Bean
     StartReservationUseCase startReservationUseCase(
             ReservationPatientGateway patients,
             ReservableSlotGateway slots,
             AppointmentHoldGateway holds,
             ReservationProcessRepository repository,
             ReservationKafkaChannel messaging,
+            ReservationExecutionGuard guard,
             Clock clock,
             AvailabilityProperties properties,
             ReservationProperties reservationProperties) {
@@ -192,6 +221,7 @@ public class ReservationConfiguration {
                 holds,
                 repository,
                 messaging,
+                guard,
                 clock.withZone(properties.timeZone()),
                 reservationProperties.attempts());
     }

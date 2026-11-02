@@ -2,6 +2,8 @@ package com.prog2.appointment.reservation.application.usecases;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.UUID;
+import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
@@ -28,14 +30,18 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
     private final ReservationProcessRepository repository;
     private final ReservationMessagingReadiness messaging;
     private final Clock clock;
+    private final ReservationExecutionGuard guard;
     private final int holdAttempts;
 
+    // Los seis colaboradores y el reloj se inyectan explícitamente; agruparlos ocultaría dependencias.
+    @SuppressWarnings("java:S107")
     public StartReservationUseCaseImpl(
             ReservationPatientGateway patients,
             ReservableSlotGateway slots,
             AppointmentHoldGateway holds,
             ReservationProcessRepository repository,
             ReservationMessagingReadiness messaging,
+            ReservationExecutionGuard guard,
             Clock clock,
             int holdAttempts) {
         this.patients = patients;
@@ -43,6 +49,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         this.holds = holds;
         this.repository = repository;
         this.messaging = messaging;
+        this.guard = guard;
         this.clock = clock;
         if (holdAttempts < 1 || holdAttempts > 10) {
             throw new IllegalArgumentException("Invalid hold attempt budget");
@@ -81,7 +88,35 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
             }
             return replay(process, ownerId, request);
         }
-        return new StartResult(execute(process), false);
+        return new StartResult(runGuarded(process.id(), true), false);
+    }
+
+    @Override
+    public ReservationProcess resumeKnownHold(UUID processId) {
+        return runGuarded(processId, false);
+    }
+
+    private ReservationProcess current(UUID id) {
+        return repository.find(id).orElseThrow(ReservationStorageException::new);
+    }
+
+    private ReservationProcess runGuarded(UUID id, boolean creating) {
+        var acquired = guard.tryAcquire(id);
+        if (acquired.isEmpty()) return current(id);
+        try (var _ = acquired.orElseThrow()) {
+            // Otro ejecutor pudo avanzar entre insertar la intención y obtener este scope.
+            var process = current(id);
+            if (!creating && (process.phase() != ReservationPhase.HELD || process.abandonmentPending()))
+                return process;
+            if (process.phase() == ReservationPhase.HELD
+                    && !clock.instant().isBefore(process.hold().expiresAt()))
+                return repository.update(id, value -> value.expireUnconfirmedHold(clock.instant()));
+            if (!creating) {
+                messaging.requestPreparation();
+                messaging.requireReady();
+            }
+            return execute(process);
+        }
     }
 
     private StartResult replay(
@@ -94,7 +129,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
 
     private ReservationProcess execute(ReservationProcess process) {
         try {
-            if (!isFuture(process.selection())) {
+            if (process.phase() == ReservationPhase.CREATING_HOLD && !isFuture(process.selection())) {
                 throw new ReservationGatewayException(
                         ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
             }
@@ -102,18 +137,17 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
             if (process.phase() != ReservationPhase.HELD) {
                 return process;
             }
-            var hold = process.hold();
-            if (!clock.instant().isBefore(hold.expiresAt())) {
-                throw new ReservationGatewayException(
-                        ReservationFailure.CONFIRMATION_REJECTED, false, true);
-            }
-            process = repository.update(process.id(), ReservationProcess::beginConfirmation);
-            if (process.phase() != ReservationPhase.CONFIRMING) {
-                return process;
-            }
-            if (!clock.instant().isBefore(hold.expiresAt())) {
-                throw new ReservationGatewayException(
-                        ReservationFailure.CONFIRMATION_REJECTED, false, true);
+            var now = clock.instant();
+            if (!now.isBefore(process.hold().expiresAt()))
+                return repository.update(process.id(), value -> value.expireUnconfirmedHold(now));
+            var claimed = repository.beginInitialConfirmation(process.id(), now);
+            if (claimed.isEmpty()) return current(process.id());
+            process = claimed.orElseThrow();
+            var beforeTransport = clock.instant();
+            if (!beforeTransport.isBefore(process.hold().expiresAt())) {
+                var ownClaim = process;
+                return repository.update(process.id(),
+                        value -> value.expireUnsentConfirmation(ownClaim, beforeTransport));
             }
             var accepted = holds.confirm(process);
             return repository.update(

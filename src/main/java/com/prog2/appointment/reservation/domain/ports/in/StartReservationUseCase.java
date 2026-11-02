@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.domain.ports.in;
 
+import java.util.UUID;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.model.StartReservationRequest;
 
@@ -11,6 +12,13 @@ public interface StartReservationUseCase {
      * @return proceso propio creado o reconocido, no necesariamente confirmado
      */
     StartResult start(long ownerId, StartReservationRequest request);
+
+    /**
+     * Continúa únicamente el hold conocido de una intención conservada, sin crear otro hold.
+     * @param processId identidad local seleccionada por recuperación interna
+     * @return progreso actual tras reclamar la confirmación propia, o sin avance si no corresponde
+     */
+    ReservationProcess resumeKnownHold(UUID processId);
 
     /**
      * Resultado del caso de uso para distinguir creación y repetición sin otra consulta susceptible
