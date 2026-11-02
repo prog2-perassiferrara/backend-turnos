@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.prog2.appointment.integration.TestIntegrationSupport;
 import com.prog2.appointment.reservation.domain.enums.*;
-import com.prog2.appointment.reservation.domain.exception.ReservationStorageException;
 import com.prog2.appointment.reservation.domain.model.*;
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase;
 import com.prog2.appointment.reservation.domain.ports.out.*;
@@ -504,10 +503,10 @@ class ReservationCancellationIntegrationTests {
         Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
         assertThat(old.queryForObject("SELECT COUNT(*) FROM app_user", Integer.class)).isEqualTo(1);
         var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", process.id().toString());
-        assertThat(row.get("phase")).isEqualTo("CONFIRMED");
-        assertThat(row.get("professional_first_name")).isEqualTo("Profesional");
+        assertThat(row).containsEntry("phase", "CONFIRMED")
+                .containsEntry("professional_first_name", "Profesional")
+                .containsEntry("cancellation_attempts", 0);
         assertThat(row.get("cancellation_status")).isNull();
-        assertThat(row.get("cancellation_attempts")).isEqualTo(0);
         assertThat(row.get("active_owner_id")).isNull();
     }
 

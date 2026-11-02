@@ -74,8 +74,10 @@ class ReservationCancellationGatewayTests {
 
     @Test
     void anUnconfirmedProcessCannotReachTheCancellationTransport() {
+        var client = gateway(Duration.ofSeconds(2));
+        var unconfirmed = ReservationProcessTests.confirming();
         var failure = assertThrows(ReservationGatewayException.class,
-                () -> gateway(Duration.ofSeconds(2)).cancel(ReservationProcessTests.confirming()));
+                () -> client.cancel(unconfirmed));
         assertThat(failure.failure()).isEqualTo(ReservationFailure.CANCELLATION_NOT_ALLOWED);
         assertThat(failure.attempted()).isFalse();
         assertThat(providers.cancellations).hasValue(0);
@@ -94,8 +96,9 @@ class ReservationCancellationGatewayTests {
     })
     void insufficientOrContradictorySuccessRemainsUncertain(String body) {
         providers.cancellationOverride.set(exchange -> TestIntegrationSupport.respond(exchange, 200, body));
+        var client = gateway(Duration.ofSeconds(2));
         var failure = assertThrows(ReservationGatewayException.class,
-                () -> gateway(Duration.ofSeconds(2)).cancel(process));
+                () -> client.cancel(process));
         assertThat(failure.failure()).isEqualTo(ReservationFailure.CANCELLATION_UNCERTAIN);
         assertThat(failure.definitive()).isFalse();
         assertThat(providers.cancellations).hasValue(1);

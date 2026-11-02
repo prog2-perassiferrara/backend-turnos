@@ -161,6 +161,8 @@ Rutas propuestas bajo `src/main/java/com/prog2/appointment/reservation/`, except
 
 ## Datos y contratos
 
+**Ajuste autorizado, 2026-11-02:** la consulta central puntual reutiliza el recorrido por paciente del historial, sin filtros opcionales de fecha/estado, hasta tres páginas de 100 con plazo total compartido. Los filtros de fecha documentados devuelven HTTP 500 en el ensayo central. Reconciliar solo tras un recorrido completo y una coincidencia exacta de proceso, paciente y selección; un recorrido parcial o contradictorio conserva incertidumbre. Afecta RF-04/RF-06, CA-06/CA-07/CA-08 y las regresiones de consulta de T-03/T-05/T-06; no cambia endpoints propios, estados ni esquema de datos.
+
 <!-- Completa solo lo aplicable. Si un punto no aplica, indica el motivo. -->
 
 - **Modelos y contratos de entrada y salida:** proponer `POST /api/reservation-processes/{processId}/cancel` para CU-08 y `POST /api/reservation-processes/{processId}/abandon` para CU-10. Primera solicitud sin body ni motivo; un reintento explícito usa la misma ruta con `{"retryVersion": n}`. Responder con `ReservationProcessResponse`, ampliado con `cancellation` nullable: modalidad, estado (`PENDING`, `REJECTED`, `RESOLVED`), fecha de solicitud, último código seguro, `canRetry` y `retryVersion` cuando corresponda. `state` continúa siendo la fase conocida de la reserva. `202` mientras la intención esté pendiente y `200` cuando se comunica un resultado resuelto o rechazado conocido; el body distingue rechazo de cancelación. Las precondiciones inválidas se rechazan antes de aceptar.

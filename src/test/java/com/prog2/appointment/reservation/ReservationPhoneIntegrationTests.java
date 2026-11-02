@@ -593,10 +593,9 @@ class ReservationPhoneIntegrationTests {
         assertThat(body(missing).path("verificationStatus").asString()).isEqualTo("INCONCLUSIVE");
         assertThat(PROVIDERS.appointmentFilters.get())
                 .containsEntry("externalPatientId", "user-" + owner)
-                .containsEntry("from", "2026-11-02")
-                .containsEntry("to", "2026-11-02")
                 .containsEntry("page", "0")
-                .containsEntry("size", "100");
+                .containsEntry("size", "100")
+                .doesNotContainKeys("from", "to", "status");
         PROVIDERS.appointmentsOverride.set(
                 exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
         assertThat(body(get(id, token)).path("verificationStatus").asString())
@@ -616,15 +615,17 @@ class ReservationPhoneIntegrationTests {
                 id.toString());
         var process = repository.find(id).orElseThrow();
         PROVIDERS.appointmentsOverride.set(
-                exchange ->
-                        TestIntegrationSupport.respond(
-                                exchange,
-                                200,
-                                "[{\"reservationId\":8251,\"reservationProcessId\":\""
-                                        + process.hold().centralProcessId()
-                                        + "\",\"externalPatientId\":\"user-"
-                                        + owner
-                                        + "\",\"professionalId\":15,\"appointmentDate\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\"}]"));
+                exchange -> {
+                    exchange.getResponseHeaders().set("X-Total-Count", "1");
+                    TestIntegrationSupport.respond(
+                            exchange,
+                            200,
+                            "[{\"reservationId\":8251,\"reservationProcessId\":\""
+                                    + process.hold().centralProcessId()
+                                    + "\",\"externalPatientId\":\"user-"
+                                    + owner
+                                    + "\",\"professionalId\":15,\"appointmentDate\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\"}]");
+                });
         var response = get(id, token);
         assertThat(body(response).path("verificationStatus").asString()).isEqualTo("VERIFIED");
         assertThat(body(response).path("state").asString()).isEqualTo("CONFIRMED");
@@ -959,6 +960,7 @@ class ReservationPhoneIntegrationTests {
                 exchange -> {
                     entered.countDown();
                     awaitGate(release);
+                    exchange.getResponseHeaders().set("X-Total-Count", "1");
                     TestIntegrationSupport.respond(
                             exchange,
                             200,

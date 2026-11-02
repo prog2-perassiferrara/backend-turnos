@@ -138,16 +138,19 @@ class ReservationCancellationTests {
 
     @Test
     void noIdentifiersAndWrongModeDoNotCreateAnIntent() {
-        assertThatThrownBy(() -> ReservationProcessTests.creating()
+        var creating = ReservationProcessTests.creating();
+        var confirming = ReservationProcessTests.confirming();
+        var confirmed = confirmed();
+        assertThatThrownBy(() -> creating
                 .requestCancellation(CancellationKind.ABANDON, null, NOW))
                 .isInstanceOf(ReservationCancellationException.class);
-        assertThatThrownBy(() -> ReservationProcessTests.confirming()
+        assertThatThrownBy(() -> confirming
                 .requestCancellation(CancellationKind.CANCEL, null, NOW))
                 .isInstanceOf(ReservationCancellationException.class);
         var process = confirmed().requestCancellation(CancellationKind.CANCEL, null, NOW);
         assertThatThrownBy(() -> process.requestCancellation(CancellationKind.ABANDON, null, NOW))
                 .isInstanceOf(ReservationCancellationException.class);
-        assertThatThrownBy(() -> confirmed().requestCancellation(CancellationKind.CANCEL, 0, NOW))
+        assertThatThrownBy(() -> confirmed.requestCancellation(CancellationKind.CANCEL, 0, NOW))
                 .isInstanceOf(ReservationCancellationException.class);
     }
 
@@ -176,7 +179,8 @@ class ReservationCancellationTests {
         assertThat(retry.retryVersion()).isEqualTo(1);
         assertThat(retry.attempts()).isZero();
         assertThat(retry.retry(0, NOW.plusSeconds(100))).isSameAs(retry);
-        assertThatThrownBy(() -> retry.retry(2, NOW.plusSeconds(100))).isInstanceOf(ReservationCancellationException.class);
+        var later = NOW.plusSeconds(100);
+        assertThatThrownBy(() -> retry.retry(2, later)).isInstanceOf(ReservationCancellationException.class);
         assertThatThrownBy(() -> retry.retry(-1, NOW)).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -209,10 +213,12 @@ class ReservationCancellationTests {
     void ownerIsCheckedBeforeReplayAndNoGatewayCanCancelAnotherUsersProcess() {
         var process = save(confirmed());
         var useCase = new CancelReservationUseCaseImpl(repository, recovery, clock);
-        assertThatThrownBy(() -> useCase.cancel(99, process.id(), null)).isInstanceOf(ReservationOperationException.class);
-        assertThatThrownBy(() -> useCase.cancel(42, UUID.randomUUID(), null)).isInstanceOf(ReservationOperationException.class);
+        var processId = process.id();
+        var missingId = UUID.randomUUID();
+        assertThatThrownBy(() -> useCase.cancel(99, processId, null)).isInstanceOf(ReservationOperationException.class);
+        assertThatThrownBy(() -> useCase.cancel(42, missingId, null)).isInstanceOf(ReservationOperationException.class);
         var abandon = new AbandonReservationUseCaseImpl(repository, recovery, clock);
-        assertThatThrownBy(() -> abandon.abandon(99, process.id(), null)).isInstanceOf(ReservationOperationException.class);
+        assertThatThrownBy(() -> abandon.abandon(99, processId, null)).isInstanceOf(ReservationOperationException.class);
         verifyNoInteractions(gateway, central);
     }
 

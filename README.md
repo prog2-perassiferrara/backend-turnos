@@ -542,9 +542,10 @@ los campos del inicio y agregan `phoneRequestId`, `requiredField`, `canSubmitPho
 identificadores centrales. KMP puede consultar periódicamente mientras espera.
 
 La lectura es local normalmente. Con incertidumbre, plazo alcanzado o espera del
-resultado superior al límite configurado, realiza un GET central acotado por paciente
-propio, fecha exacta y una página (0, tamaño 100). Solo una coincidencia de proceso,
-paciente y horario permite reconciliar. Una página vacía/incompleta deja
+resultado superior al límite configurado, consulta cátedra por paciente propio,
+sin filtros de fecha o estado, con hasta tres páginas de 100 y un plazo total acotado.
+Solo un recorrido completo y una coincidencia exacta de proceso, paciente y horario
+permiten reconciliar. Una respuesta vacía, parcial o contradictoria deja
 `INCONCLUSIVE`; dependencia inaccesible devuelve el estado local con `UNAVAILABLE`
 y aviso. `VERIFIED` indica evidencia central consultada y `LOCAL`, lectura local.
 Consultar no crea holds, confirma, cancela ni publica teléfonos. No fabrica una
