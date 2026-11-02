@@ -77,6 +77,21 @@ public class ReservationProcessEntity {
     @Column(name = "abandonment_pending")
     private boolean abandonmentPending;
 
+    @Column(name = "cancellation_kind", length = 16)
+    private String cancellationKind;
+    @Column(name = "cancellation_status", length = 16)
+    private String cancellationStatus;
+    @Column(name = "cancellation_requested_at")
+    private Instant cancellationRequestedAt;
+    @Column(name = "cancellation_retry_version")
+    private int cancellationRetryVersion;
+    @Column(name = "cancellation_attempts")
+    private int cancellationAttempts;
+    @Column(name = "cancellation_next_attempt_at")
+    private Instant cancellationNextAttemptAt;
+    @Column(name = "cancellation_last_failure", length = 64)
+    private String cancellationLastFailure;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
@@ -116,6 +131,14 @@ public class ReservationProcessEntity {
         writeId = mutation.toString();
         closedAt = process.closedAt();
         abandonmentPending = process.abandonmentPending();
+        var cancellation = process.cancellation();
+        cancellationKind = cancellation == null ? null : cancellation.kind().name();
+        cancellationStatus = cancellation == null ? null : cancellation.state().name();
+        cancellationRequestedAt = cancellation == null ? null : cancellation.requestedAt();
+        cancellationRetryVersion = cancellation == null ? 0 : cancellation.retryVersion();
+        cancellationAttempts = cancellation == null ? 0 : cancellation.attempts();
+        cancellationNextAttemptAt = cancellation == null ? null : cancellation.nextAttemptAt();
+        cancellationLastFailure = cancellation == null ? null : cancellation.lastFailure();
         updatedAt = now;
     }
 
@@ -198,6 +221,14 @@ public class ReservationProcessEntity {
     public boolean getAbandonmentPending() {
         return abandonmentPending;
     }
+
+    public String getCancellationKind() { return cancellationKind; }
+    public String getCancellationStatus() { return cancellationStatus; }
+    public Instant getCancellationRequestedAt() { return cancellationRequestedAt; }
+    public int getCancellationRetryVersion() { return cancellationRetryVersion; }
+    public int getCancellationAttempts() { return cancellationAttempts; }
+    public Instant getCancellationNextAttemptAt() { return cancellationNextAttemptAt; }
+    public String getCancellationLastFailure() { return cancellationLastFailure; }
 
     public Instant getCreatedAt() {
         return createdAt;

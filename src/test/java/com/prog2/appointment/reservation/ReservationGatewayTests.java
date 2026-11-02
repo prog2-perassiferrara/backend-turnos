@@ -96,6 +96,20 @@ class ReservationGatewayTests {
         assertThat(providers.submittedFirstName).hasValue("Paciente");
     }
 
+    @Test
+    void acceptsTheOriginalNanosecondExpiryAfterItsMicrosecondRoundTrip() {
+        var original = ReservationProcessTests.HOLD.expiresAt().plusNanos(123456789);
+        providers.holdExpiresAt.set(original);
+        var created = gateway.create(process);
+        var stored = new com.prog2.appointment.reservation.domain.model.HoldDetails(
+                created.holdId(), created.centralProcessId(),
+                created.expiresAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        var accepted = gateway.confirm(process.acceptHold(stored).beginConfirmation());
+        assertThat(accepted).isEqualTo(stored);
+        assertThat(created.expiresAt()).isEqualTo(stored.expiresAt()).isBefore(original);
+        assertThat(providers.confirmations).hasValue(1);
+    }
+
     @ParameterizedTest
     @CsvSource({
         "400,INVALID_SLOT,INVALID_RESERVATION_SELECTION,true",

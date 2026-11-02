@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.prog2.appointment.reservation.domain.enums.ReservationActionType;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
@@ -79,6 +80,38 @@ class ReservationProcessTests {
         assertThat(process.closedAt()).isNull();
         assertThat(process.requestEventId()).isNull();
         assertThat(process.reservationId()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-11-02T11:05:00.123456789Z", "2026-11-02T11:05:00.999999999Z"})
+    void centralExpiryIsTruncatedBeforePersistenceAndNeverExtended(String value) {
+        var original = Instant.parse(value);
+        var hold = new HoldDetails(HOLD.holdId(), HOLD.centralProcessId(), original);
+        assertThat(hold.expiresAt()).isEqualTo(original.truncatedTo(java.time.temporal.ChronoUnit.MICROS))
+                .isBefore(original);
+    }
+
+    @Test
+    void phoneRequestAndRejectionAcceptTheOriginalExpiryButRejectAnotherMicrosecond() {
+        var original = HOLD.expiresAt().plusNanos(123456789);
+        var held = new HoldDetails(HOLD.holdId(), HOLD.centralProcessId(),
+                original.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        var process = creating().acceptHold(held).beginConfirmation();
+        var request = new ReservationAction(ReservationActionType.PHONE_REQUESTED,
+                new ReservationAction.Correlation("request-1", held.centralProcessId(), held.holdId(), null),
+                original, null, null);
+        var phone = process.apply(request, NOW);
+        assertThat(phone.phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
+        assertThat(phone.hold().expiresAt()).isEqualTo(held.expiresAt());
+        var rejection = new ReservationAction(ReservationActionType.PHONE_REJECTED,
+                new ReservationAction.Correlation("rejected", held.centralProcessId(), held.holdId(), "request-1"),
+                original, null, null);
+        var rejected = phone.queuePhone().phonePublished().apply(rejection, NOW);
+        assertThat(rejected.phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
+        assertThat(rejected.canSubmitPhone(NOW)).isTrue();
+        var changed = new ReservationAction(ReservationActionType.PHONE_REQUESTED,
+                request.correlation(), original.plusNanos(1000), null, null);
+        assertThat(phone.apply(changed, NOW).phase()).isEqualTo(ReservationPhase.RECONCILIATION_REQUIRED);
     }
 
     @Test
@@ -218,6 +251,7 @@ class ReservationProcessTests {
                         phone.writeId(),
                         null,
                         true,
+                        null,
                         null);
         var confirmed =
                 abandoning.apply(action(ReservationActionType.CONFIRMED, "confirmed-1"), NOW);

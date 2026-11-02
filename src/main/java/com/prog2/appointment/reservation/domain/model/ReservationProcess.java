@@ -1,6 +1,9 @@
 package com.prog2.appointment.reservation.domain.model;
 
 import java.time.Instant;
+import java.time.Duration;
+import com.prog2.appointment.reservation.domain.enums.CancellationKind;
+import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
 import java.util.Objects;
 import java.util.UUID;
 import com.prog2.appointment.reservation.domain.enums.CentralAppointmentState;
@@ -25,7 +28,8 @@ public record ReservationProcess(
         UUID writeId,
         Instant closedAt,
         boolean abandonmentPending,
-        ProfessionalName professionalName) {
+        ProfessionalName professionalName,
+        CancellationProgress cancellation) {
     public ReservationProcess {
         Objects.requireNonNull(id);
         Objects.requireNonNull(patient);
@@ -52,6 +56,7 @@ public record ReservationProcess(
                 UUID.randomUUID(),
                 null,
                 false,
+                null,
                 null);
     }
 
@@ -101,7 +106,7 @@ public record ReservationProcess(
     }
 
     public ReservationProcess beginConfirmation() {
-        if (phase != ReservationPhase.HELD) {
+        if (phase != ReservationPhase.HELD || abandonmentPending) {
             return this;
         }
         return change(ReservationPhase.CONFIRMING, hold, requestEventId, reservationId, null, null);
@@ -235,7 +240,7 @@ public record ReservationProcess(
     }
 
     private ReservationProcess phoneRequested(ReservationAction action) {
-        if (!hold.expiresAt().equals(action.expiresAt())
+        if (!hold.expiresAtMatches(action.expiresAt())
                 || requestEventId != null
                         && !requestEventId.equals(action.correlation().eventId())) {
             return inconsistent();
@@ -273,7 +278,7 @@ public record ReservationProcess(
 
     /** El ACK solo permite avanzar la respuesta todavía activa. */
     public ReservationProcess phonePublished() {
-        return phase == ReservationPhase.PHONE_QUEUED
+        return phase == ReservationPhase.PHONE_QUEUED && !abandonmentPending
                 ? change(
                         ReservationPhase.WAITING_FOR_RESULT,
                         hold,
@@ -299,7 +304,7 @@ public record ReservationProcess(
     }
 
     private ReservationProcess phoneRejected(ReservationAction action) {
-        if (requestEventId == null || !hold.expiresAt().equals(action.expiresAt()))
+        if (requestEventId == null || !hold.expiresAtMatches(action.expiresAt()))
             return inconsistent();
         return change(
                 ReservationPhase.WAITING_FOR_PHONE,
@@ -332,7 +337,8 @@ public record ReservationProcess(
                 writeId,
                 closedAt,
                 abandonmentPending,
-                name);
+                name,
+                cancellation);
     }
 
     private ReservationProcess reconcileState(CentralAppointment evidence, Instant now) {
@@ -401,6 +407,7 @@ public record ReservationProcess(
                 abandonmentPending
                         && state != ReservationPhase.CANCELLED
                         && state != ReservationPhase.EXPIRED
+                        && state != ReservationPhase.FAILED
                         && state != ReservationPhase.HOLD_ATTEMPT_ABANDONED;
         return new ReservationProcess(
                 id,
@@ -415,7 +422,107 @@ public record ReservationProcess(
                 writeId,
                 closed,
                 pendingAbandonment,
-                professionalName);
+                professionalName,
+                progressAfter(state, closed));
+    }
+
+    /**
+     * Acepta una intención propia sin ejecutar REST. La aceptación y el cierre del outbox
+     * se conservan juntos por el repositorio.
+     * @param kind acción explícita
+     * @param retryVersion versión observada para reintento; null significa solicitud/replay
+     * @param now instante de aceptación
+     * @return proceso actualizado o el resultado ya conocido
+     */
+    public ReservationProcess requestCancellation(CancellationKind kind, Integer retryVersion, Instant now) {
+        Objects.requireNonNull(kind);
+        if (cancellation != null) {
+            if (kind != cancellation.kind()) {
+                throw new ReservationCancellationException(ReservationFailure.CANCELLATION_KIND_CONFLICT);
+            }
+            return retryVersion == null ? this
+                    : withCancellation(cancellation.retry(retryVersion, now), abandonmentPending);
+        }
+        if (retryVersion != null) {
+            throw new ReservationCancellationException(ReservationFailure.CANCELLATION_RETRY_NOT_READY);
+        }
+        if (phase == ReservationPhase.CANCELLED
+                || kind == CancellationKind.ABANDON && phase.isFinal() && phase != ReservationPhase.CONFIRMED) {
+            return this;
+        }
+        if (hold == null || phase.isFinal() && phase != ReservationPhase.CONFIRMED
+                || kind == CancellationKind.CANCEL && phase != ReservationPhase.CONFIRMED) {
+            throw new ReservationCancellationException(ReservationFailure.CANCELLATION_NOT_ALLOWED);
+        }
+        return withCancellation(initialCancellation(kind, now),
+                kind == CancellationKind.ABANDON && !phase.isFinal());
+    }
+
+    private CancellationProgress initialCancellation(CancellationKind kind, Instant now) {
+        var progress = CancellationProgress.create(kind, now);
+        return kind == CancellationKind.ABANDON && phase != ReservationPhase.CONFIRMED
+                ? progress.awaitExpiry(hold.expiresAt()) : progress;
+    }
+
+    /**
+     * @param now instante de evaluación
+     * @return si venció una espera estable de un abandono; el llamador debe comprobar además
+     *     que nunca se registró una respuesta telefónica antes de aplicar el cierre
+     */
+    public boolean canExpireAbandonment(Instant now) {
+        return abandonmentPending && hold != null && !now.isBefore(hold.expiresAt())
+                && (phase == ReservationPhase.HELD || phase == ReservationPhase.WAITING_FOR_REQUEST
+                        || phase == ReservationPhase.WAITING_FOR_PHONE);
+    }
+
+    /**
+     * Cierre local por el plazo central de una espera estable sin teléfono registrado.
+     * No acredita cancelar ni garantiza que el horario siga disponible.
+     * @param now instante de cierre
+     * @return proceso vencido, o el estado actual si una transición concurrente impide el cierre
+     */
+    public ReservationProcess expireAbandonment(Instant now) {
+        return canExpireAbandonment(now)
+                ? change(ReservationPhase.EXPIRED, hold, requestEventId, reservationId,
+                        ReservationFailure.HOLD_EXPIRED.name(), now) : this;
+    }
+
+    /** Reclamación pura: el adapter solo habilita HTTP después del commit verificable. */
+    public ReservationProcess claimCancellation(Instant now, Duration budget) {
+        return cancellation == null ? this
+                : withCancellation(cancellation.claim(now, budget), abandonmentPending);
+    }
+
+    /** Un resultado antiguo puede acreditar cancelación, pero no reabrir otro cierre. */
+    public ReservationProcess cancel(CancellationEvidence evidence, Instant now) {
+        if (!evidence.belongsTo(this)
+                || phase.isFinal() && phase != ReservationPhase.CONFIRMED) return this;
+        return change(ReservationPhase.CANCELLED, hold, requestEventId,
+                evidence.reservationId(), null, now);
+    }
+
+    /** Un fallo solo afecta su intento; una confirmación concurrente preserva el abandono. */
+    public ReservationProcess cancellationFailed(ReservationProcess claimed,
+            ReservationGatewayException failure, Instant now, Duration retry, Duration cooldown) {
+        if (cancellation == null || !cancellation.matches(claimed.cancellation())) return this;
+        boolean confirmedSinceClaim = abandonmentPending && phase == ReservationPhase.CONFIRMED
+                && claimed.phase() != ReservationPhase.CONFIRMED;
+        return withCancellation(cancellation.failed(failure.failure().name(),
+                failure.definitive() && !confirmedSinceClaim, now, retry, cooldown), abandonmentPending);
+    }
+
+    private CancellationProgress progressAfter(ReservationPhase next, Instant at) {
+        if (cancellation == null) return null;
+        if (next == ReservationPhase.CANCELLED || next == ReservationPhase.EXPIRED
+                || next == ReservationPhase.FAILED) return cancellation.resolve();
+        return next == ReservationPhase.CONFIRMED && phase != ReservationPhase.CONFIRMED
+                ? cancellation.confirmed(at) : cancellation;
+    }
+
+    private ReservationProcess withCancellation(CancellationProgress progress, boolean abandoning) {
+        if (Objects.equals(progress, cancellation) && abandoning == abandonmentPending) return this;
+        return new ReservationProcess(id, patient, selection, phase, hold, requestEventId,
+                reservationId, reasonCode, version, writeId, closedAt, abandoning, professionalName, progress);
     }
 
     @Override

@@ -84,7 +84,7 @@ CU-01 incluye CU-02 porque el registro correcto inicia sesión automáticamente.
 | [CU-07](CU-07-consultar-reservas.md) | Consultar reservas y procesos propios, con sus estados diferenciados y aviso cuando solo haya datos locales. Revisado y aprobado por el usuario. |
 | [CU-08](CU-08-cancelar-reserva.md) | Cancelar una reserva confirmada y reconciliar respuestas REST y eventos Kafka. Revisado y aprobado por el usuario. |
 | [CU-09](CU-09-recuperar-procesos.md) | Recuperar operaciones interrumpidas o con resultado incierto sin repetir efectos ni reabrir procesos finalizados. Revisado y aprobado por el usuario. |
-| [CU-10](CU-10-abandonar-proceso.md) | Solicitar explícitamente la cancelación de un proceso pendiente para liberar el hold, siguiendo el criterio confirmado por el profesor. Revisado y aprobado por el usuario. |
+| [CU-10](CU-10-abandonar-proceso.md) | Detener explícitamente un proceso pendiente y esperar su vencimiento; cancelar si se confirmó concurrentemente. Revisado y aprobado por el usuario. |
 
 **Decisión para propiedad de usuarios y JWT:** Confirmada previamente: Turnos administra cuentas y emite JWT; ambos backends validan autenticación y permisos.
 
@@ -108,16 +108,7 @@ CU-01 incluye CU-02 porque el registro correcto inicia sesión automáticamente.
 
 **Decisión para abandono concurrente con confirmación:** Confirmada el 2026-10-06: abandonar también autoriza cancelar la reserva si se confirmó mientras el usuario esperaba. Se conserva la intención y se informa el resultado central verificado, sin exigir otra acción del usuario.
 
-**Aclaración docente aportada por el usuario:**
-
-El 2026-10-06 el usuario compartió una conversación de Slack: Ignacio preguntó si la cancelación de la sección 12 libera el turno y puede utilizarse para cancelar o abandonar un hold; Daniel Quinteros respondió: «sí, la podés usar».
-
-El 2026-10-07 el usuario aportó una segunda aclaración de clase: «Ante la duda sobre si utilizar la operación de cancelar reserva para cancelar un hold, a pesar de las restricciones de estados indicadas en la matriz de errores, el profesor confirmó que se puede seguir ese criterio para el proyecto».
-
-- **Criterio confirmado para el proyecto:** utilizar la operación de cancelar reserva para cancelar o abandonar un hold. Esa posibilidad deja de ser una decisión pendiente. No implica que el horario permanezca libre frente a nuevas operaciones concurrentes.
-- **Diferencia con el contrato escrito:** la sección 13.1 indica `RESERVATION_NOT_CANCELLABLE` para estados distintos de `CONFIRMED` o `CANCELLED`; la nueva aclaración aborda expresamente esa restricción y permite seguir el criterio de cancelación de holds. Conservar el documento original y registrar aquí la aclaración complementaria.
-- **Límite de verificación:** se dispone de los textos aportados por el usuario, sin enlace ni versión actualizada del contrato. No se verificaron el endpoint real ni su comportamiento.
-- **Pendiente para la validación de integración:** verificar las respuestas y eventos exactos al cancelar holds; las aclaraciones no detallan esos mensajes. No inventar su forma ni volver a preguntar si se permite utilizar la operación para ese fin.
+**Cancelación y vencimiento:** la operación de las secciones 12 y 13.1 del anexo cancela reservas confirmadas y reconoce cancelaciones ya realizadas. Abandonar un pendiente conserva la intención y detiene nuevos pasos; el hold mantiene su vencimiento central. Una espera estable sin respuesta telefónica registrada puede cerrarse al alcanzar ese plazo; las operaciones inciertas requieren reconciliación. Si se confirma concurrentemente, la intención autoriza cancelar esa reserva.
 
 **Reglas verificadas que no requieren una nueva elección:**
 

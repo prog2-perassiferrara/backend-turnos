@@ -2,6 +2,8 @@ package com.prog2.appointment.reservation.domain.ports.out;
 
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
+import com.prog2.appointment.reservation.domain.enums.CancellationKind;
+import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -79,6 +81,27 @@ public interface ReservationProcessRepository {
 
     /** Aplica evidencia sobre la versión actual y cierra la respuesta en la misma transacción. */
     ReservationProcess reconcile(UUID id, CentralAppointment evidence, Instant now);
+
+    /**
+     * Acepta intención/reintento y pausa outbox juntos, comprobando propietario antes del replay.
+     * @return proceso confirmado y permiso de ejecutar únicamente el ciclo recién aceptado
+     * @throws com.prog2.appointment.reservation.domain.exception.ReservationCancellationException
+     *     si no pertenece al propietario o la acción es incompatible
+     */
+    CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
+            Integer retryVersion, Instant now);
+
+    /** @return hasta limit procesos con ejecución pendiente y presupuesto disponible */
+    List<UUID> dueCancellations(Instant now, int limit);
+
+    /** @return reclamación propia confirmada; vacío si ya no corresponde o la ganó otro worker */
+    Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now, Duration budget);
+
+    /** Aplica evidencia al estado actual y resuelve intención/outbox en la misma transacción. */
+    ReservationProcess confirmCancellation(UUID id, CancellationEvidence evidence, Instant now);
+
+    /** Aceptación del ciclo distinta de la mera existencia de una intención previa. */
+    record CancellationAcceptance(ReservationProcess process, boolean accepted) {}
 
     /** Resultado durable de aceptación o replay. */
     record PhoneResult(ReservationProcess process, PhoneSubmission phone, boolean created) {}

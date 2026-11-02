@@ -83,7 +83,10 @@ public final class ReservationProblemHandler {
                             CONFIRMATION_REJECTED,
                             PHONE_NOT_REQUESTED,
                             PHONE_SUBMISSION_ACTIVE,
-                            PHONE_WINDOW_CLOSED ->
+                            PHONE_WINDOW_CLOSED,
+                            CANCELLATION_NOT_ALLOWED,
+                            CANCELLATION_RETRY_NOT_READY,
+                            CANCELLATION_KIND_CONFLICT ->
                             HttpStatus.CONFLICT;
                     case RESERVATION_PROCESS_NOT_FOUND -> HttpStatus.NOT_FOUND;
                     case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;

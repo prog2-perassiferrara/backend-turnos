@@ -302,8 +302,8 @@ La identidad procede del principal autenticado, cuyo sujeto es el ID estable de 
 un ID o rol enviado libremente no lo sustituye. El contexto pertenece a cada petición,
 sin cookies ni sesión HTTP de autenticación. No se consulta la cuenta por petición ni
 se incorpora revocación: la activación se comprueba al iniciar sesión.
-La comprobación de propiedad efectiva se incorpora con cada CU de procesos/reservas,
-que todavía no están implementados. El acceso técnico saliente conserva su JWT propio
+Las operaciones de procesos/reservas comprueban además la propiedad por usuario.
+El acceso técnico saliente conserva su JWT propio
 de servicio; no se utiliza como sesión de usuario ni se entrega a KMP.
 
 CORS está cerrado por defecto. Si se configura, cada origen debe contener esquema
@@ -542,9 +542,10 @@ los campos del inicio y agregan `phoneRequestId`, `requiredField`, `canSubmitPho
 identificadores centrales. KMP puede consultar periódicamente mientras espera.
 
 La lectura es local normalmente. Con incertidumbre, plazo alcanzado o espera del
-resultado superior al límite configurado, realiza un GET central acotado por paciente
-propio, fecha exacta y una página (0, tamaño 100). Solo una coincidencia de proceso,
-paciente y horario permite reconciliar. Una página vacía/incompleta deja
+resultado superior al límite configurado, consulta cátedra por paciente propio,
+sin filtros de fecha o estado, con hasta tres páginas de 100 y un plazo total acotado.
+Solo un recorrido completo y una coincidencia exacta de proceso, paciente y horario
+permiten reconciliar. Una respuesta vacía, parcial o contradictoria deja
 `INCONCLUSIVE`; dependencia inaccesible devuelve el estado local con `UNAVAILABLE`
 y aviso. `VERIFIED` indica evidencia central consultada y `LOCAL`, lectura local.
 Consultar no crea holds, confirma, cancela ni publica teléfonos. No fabrica una
@@ -595,6 +596,80 @@ Contrato y diseño: [SPEC](docs/features/consulta-reservas-propias/SPEC.md),
 [PLAN](docs/features/consulta-reservas-propias/PLAN.md) y
 [TASKS](docs/features/consulta-reservas-propias/TASKS.md).
 
+## Cancelar reservas y abandonar procesos
+
+Ambas acciones requieren JWT de usuario y la referencia local del proceso:
+
+| Operación | Solicitud |
+| --- | --- |
+| Cancelar una reserva propia confirmada | `POST /api/reservation-processes/{processId}/cancel` |
+| Abandonar explícitamente un proceso propio con IDs centrales conocidos | `POST /api/reservation-processes/{processId}/abandon` |
+
+La primera solicitud no lleva body ni motivo. Abandonar también autoriza cancelar
+si la reserva se confirmó mientras se esperaba. Salir de KMP, volver atrás o
+consultar no solicita abandono ni extiende el plazo. Si faltan los IDs centrales,
+se conserva la política de creación incierta de CU-04; una ocupación no identifica
+un hold propio que pueda cancelarse.
+
+El vencimiento central se conserva en microsegundos, truncando antes de persistir para no ampliarlo. La confirmación REST y los eventos Kafka se comparan con esa misma precisión; los decimales adicionales del proveedor no generan una discrepancia falsa.
+
+La respuesta conserva el formato de progreso y añade `cancellation`, null si
+nunca se solicitó. Incluye `kind` (`CANCEL`/`ABANDON`), `status`
+(`PENDING`/`REJECTED`/`RESOLVED`), `requestedAt`, `lastFailure`, `canRetry` y
+`retryVersion` cuando se permite reintentar. La fase `state` sigue expresando el
+resultado conocido: puede ser `CONFIRMED` mientras su cancelación está `PENDING`.
+`RESOLVED` se interpreta junto con esa fase: un vencimiento verificado sigue
+siendo `EXPIRED`, no una cancelación exitosa.
+
+Devuelve 202 mientras la intención está pendiente y 200 cuando comunica un
+resultado conocido, incluido un rechazo identificado como `REJECTED`. Solo
+`state=CANCELLED` acredita la cancelación. Repetir la solicitud devuelve el
+progreso existente sin reiniciar el presupuesto ni duplicar efectos funcionales.
+Todas las respuestas conservan `Cache-Control: no-store`.
+
+La intención y la pausa del teléfono pendiente se guardan antes del efecto REST.
+Mientras el proceso no esté confirmado no se envía el POST de cancelación: se espera hasta el expiresAt central, sin consumir intentos. Si permanece en HELD, WAITING_FOR_REQUEST o WAITING_FOR_PHONE y nunca se registró una respuesta telefónica, se cierra localmente como EXPIRED. Esto no garantiza disponibilidad del horario. Con cualquier teléfono registrado u otra operación incierta, se requiere reconciliación, incluso después del plazo.
+
+Una publicación ya iniciada puede llegar a cátedra; su confirmación no borra la
+intención de cancelar. El abandono incierto mantiene el límite de creación por
+usuario. Cancelar una reserva ya confirmada no ocupa ni altera otro proceso
+pendiente que el usuario tenga.
+
+La recuperación conserva en MySQL hasta tres intentos por ciclo, también tras
+reiniciar. Antes de repetir consulta evidencia central por los IDs conocidos;
+una respuesta perdida no prueba fallo y una lista vacía no prueba liberación.
+Si se agota el presupuesto, no hay otro ciclo automático. Cuando `canRetry=true`,
+el usuario puede pedirlo explícitamente en la misma ruta con:
+
+```json
+{"retryVersion": 0}
+```
+
+Se utiliza la versión devuelta por la consulta, después del enfriamiento
+(`RESERVATION_PREPARATION_COOLDOWN`, 30 segundos por defecto). La versión avanza
+al aceptar el nuevo ciclo; repetir una anterior no abre otro. Las consultas y la
+solicitud original sin body nunca reinician ese presupuesto. Se reutilizan el
+timeout HTTP y la separación existentes; el máximo de tres es específico de
+cancelación. Las tareas periódicas de teléfono y cancelación usan un pool de dos
+hilos para que una espera REST no bloquee la otra publicación.
+
+Una respuesta REST válida basta para verificar cancelación aunque Kafka no esté
+disponible. Catálogo no se consulta para esta operación si el acceso técnico
+conservado permite usar cátedra. Una caída central mantiene intención y aviso;
+si no puede acreditarse la escritura local, no se inicia un efecto nuevo.
+
+Errores de entrada y seguridad conservan 400/401/403; proceso ajeno o inexistente
+devuelve 404 sin distinguirlos. Los conflictos propios usan 409 con
+`CANCELLATION_NOT_ALLOWED`, `CANCELLATION_KIND_CONFLICT` o
+`CANCELLATION_RETRY_NOT_READY`; persistencia no verificable devuelve 503
+`STORAGE_UNAVAILABLE`. Rechazos y problemas centrales quedan clasificados en
+`cancellation.lastFailure`, sin copiar `detail` ni credenciales. Un 404/409 central
+no se comunica como liberación; el reloj tampoco decide el resultado de una operación incierta.
+
+Contrato y diseño: [SPEC](docs/features/cancelacion-abandono/SPEC.md),
+[PLAN](docs/features/cancelacion-abandono/PLAN.md) y
+[TASKS](docs/features/cancelacion-abandono/TASKS.md).
+
 ## Archivos y responsabilidades
 
 - `pom.xml` y wrapper: dependencias y compilación reproducible, con versiones gestionadas por Boot; JaCoCo genera cobertura y SonarScanner publica el análisis.
@@ -640,6 +715,10 @@ no se empaqueta en producción. No editar una migración ya aplicada.
 sin modificar migraciones previas ni cuentas existentes.
 `V5__add_reservation_professional_names.sql` añade nombre y apellido históricos
 opcionales a los procesos existentes, sin otra tabla ni pérdida de datos.
+`V6__add_reservation_cancellation.sql` conserva en ese mismo proceso la intención,
+el presupuesto y la próxima ejecución de cancelación. `CancellationProgress`
+mantiene sus reglas; los casos de uso de cancelar/abandonar comparten el recuperador
+y su gateway REST, con persistencia antes del efecto central.
 
 El paquete base es `com.prog2.appointment`. Las funcionalidades futuras respetarán
 dominio, aplicación e infraestructura según la estructura acordada; no se generan slices vacíos.

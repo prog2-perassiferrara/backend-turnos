@@ -72,7 +72,7 @@ public final class WebClientAppointmentHoldAdapter implements AppointmentHoldGat
         var response = post(process.hold().holdId(), body, 202);
         if (!"WAITING_FOR_PHONE".equals(response.status())
                 || !process.hold().centralProcessId().equals(response.reservationProcessId())
-                || !process.hold().expiresAt().equals(response.expiresAt())) {
+                || !process.hold().expiresAtMatches(response.expiresAt())) {
             throw failure(ReservationFailure.CONFIRMATION_UNCERTAIN, true, false);
         }
         return process.hold();

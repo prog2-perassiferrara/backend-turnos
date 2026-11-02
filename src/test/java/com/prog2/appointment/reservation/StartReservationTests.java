@@ -494,7 +494,7 @@ class StartReservationTests {
         @Override
         public Optional<com.prog2.appointment.reservation.domain.model.PhoneSubmission> latestPhone(
                 UUID id) {
-            throw new UnsupportedOperationException();
+            return Optional.empty();
         }
 
         @Override
@@ -523,7 +523,41 @@ class StartReservationTests {
                 UUID id,
                 com.prog2.appointment.reservation.domain.model.CentralAppointment evidence,
                 Instant now) {
-            throw new UnsupportedOperationException();
+            return update(id, value -> value.reconcile(evidence, now));
+        }
+
+        @Override
+        public CancellationAcceptance requestCancellation(long ownerId, UUID id,
+                com.prog2.appointment.reservation.domain.enums.CancellationKind kind,
+                Integer retryVersion, Instant now) {
+            var before = values.get(id);
+            if (before == null || before.ownerId() != ownerId) throw new
+                    com.prog2.appointment.reservation.domain.exception.ReservationCancellationException(
+                            com.prog2.appointment.reservation.domain.enums.ReservationFailure.RESERVATION_PROCESS_NOT_FOUND);
+            var after = before.requestCancellation(kind, retryVersion, now);
+            values.put(id, after);
+            return new CancellationAcceptance(after, !after.equals(before));
+        }
+
+        @Override
+        public java.util.List<UUID> dueCancellations(Instant now, int limit) {
+            return values.values().stream().filter(p -> p.cancellation() != null
+                    && p.cancellation().isDue(now)).limit(limit).map(ReservationProcess::id).toList();
+        }
+
+        @Override
+        public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
+                java.time.Duration budget) {
+            var before = values.get(id);
+            var after = before.claimCancellation(now, budget);
+            values.put(id, after);
+            return before.equals(after) ? Optional.empty() : Optional.of(after);
+        }
+
+        @Override
+        public ReservationProcess confirmCancellation(UUID id,
+                com.prog2.appointment.reservation.domain.model.CancellationEvidence evidence, Instant now) {
+            return update(id, value -> value.cancel(evidence, now));
         }
 
         @Override

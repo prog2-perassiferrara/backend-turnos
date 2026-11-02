@@ -226,6 +226,32 @@ class ReservationIntegrationTests {
         return json.readTree(response.body());
     }
 
+    @Test
+    void nanosecondExpirySurvivesMysqlInitialConfirmationAndTheKafkaPhoneRequest() throws Exception {
+        var original = ReservationProcessTests.HOLD.expiresAt().plusNanos(987654321);
+        PROVIDERS.holdExpiresAt.set(original);
+        UUID id = UUID.randomUUID();
+        var started = start(id, "09:00");
+        assertThat(started.statusCode()).isEqualTo(202);
+        assertThat(body(started).path("state").asString()).isEqualTo("WAITING_FOR_REQUEST");
+        var process = repository.find(id).orElseThrow();
+        assertThat(process.hold().expiresAt())
+                .isEqualTo(original.truncatedTo(java.time.temporal.ChronoUnit.MICROS)).isBefore(original);
+        String eventId = "precision-" + id;
+        send(process.hold().centralProcessId(), json.writeValueAsString(Map.of(
+                "eventId", eventId, "eventType", "AdditionalInformationRequested", "schemaVersion", 1,
+                "groupId", ReservationTestSupport.GROUP, "reservationProcessId", process.hold().centralProcessId(),
+                "holdId", process.hold().holdId(), "requiredField", "PHONE_NUMBER", "expiresAt", original.toString(),
+                "occurredAt", ReservationProcessTests.NOW.toString())));
+        phase(id, ReservationPhase.WAITING_FOR_PHONE);
+        var requested = repository.find(id).orElseThrow();
+        assertThat(requested.requestEventId()).isEqualTo(eventId);
+        assertThat(requested.canSubmitPhone(ReservationProcessTests.NOW)).isTrue();
+        assertThat(requested.hold().expiresAt()).isEqualTo(process.hold().expiresAt());
+        assertThat(PROVIDERS.creates).hasValue(1);
+        assertThat(PROVIDERS.confirmations).hasValue(1);
+    }
+
     private void phase(UUID id, ReservationPhase phase) {
         await().atMost(Duration.ofSeconds(15))
                 .untilAsserted(

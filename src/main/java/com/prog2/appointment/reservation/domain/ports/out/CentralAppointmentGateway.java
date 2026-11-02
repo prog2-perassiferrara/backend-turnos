@@ -11,9 +11,10 @@ import java.util.Optional;
 public interface CentralAppointmentGateway {
     /**
      * @param process proceso propio con identificadores conocidos
-     * @return coincidencia exacta o ausencia inconclusa; nunca prueba liberación
+     * @return coincidencia exacta tras un recorrido paginado completo y acotado, o ausencia
+     *     inconclusa; nunca prueba liberación
      * @throws com.prog2.appointment.reservation.domain.exception.ReservationGatewayException ante
-     *     proveedor inaccesible o respuesta inconsistente
+     *     proveedor inaccesible
      */
     Optional<CentralAppointment> find(ReservationProcess process);
 

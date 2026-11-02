@@ -3,6 +3,10 @@ package com.prog2.appointment.reservation.infrastructure.persistence.service;
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
 import java.time.Clock;
+import com.prog2.appointment.reservation.domain.enums.CancellationKind;
+import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
+import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
+import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository.CancellationAcceptance;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -144,7 +148,7 @@ public class TransactionalReservationStore {
         var entity = processes.findById(before.processId().toString()).orElseThrow();
         var process = mapper.toDomain(entity);
         var after =
-                process.phase().isFinal()
+                process.phase().isFinal() || process.abandonmentPending()
                         ? before.finish(now, "PROCESS_CLOSED")
                         : before.beginAttempt(now, attempts, retry, cooldown);
         row.apply(after);
@@ -175,6 +179,53 @@ public class TransactionalReservationStore {
         if (!after.equals(before)) {
             entity.apply(after, UUID.randomUUID(), now);
             if (after.phase().isFinal()) closeActive(entity.getId(), now, after.phase().name());
+            processes.flush();
+        }
+        return mapper.toDomain(entity);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
+    public CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
+            Integer retryVersion, Instant now, UUID writeId) {
+        var entity = processes.findById(id.toString())
+                .filter(value -> value.getOwnerId() == ownerId)
+                .orElseThrow(() -> new ReservationCancellationException(
+                        ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
+        var before = mapper.toDomain(entity);
+        var after = before.requestCancellation(kind, retryVersion, now);
+        if (after.equals(before)) return new CancellationAcceptance(before, false);
+        entity.apply(after, writeId, now);
+        if (after.abandonmentPending()) closeActive(entity.getId(), now, "PROCESS_ABANDONED");
+        processes.flush();
+        return new CancellationAcceptance(mapper.toDomain(entity), true);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 10)
+    public List<UUID> dueCancellations(Instant now, int limit) {
+        return processes.dueCancellations(now, PageRequest.of(0, limit)).stream()
+                .map(UUID::fromString).toList();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
+    public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
+            Duration budget, UUID writeId) {
+        var entity = processes.findById(id.toString()).orElseThrow();
+        var before = mapper.toDomain(entity);
+        var after = before.claimCancellation(now, budget);
+        if (after.equals(before)) return Optional.empty();
+        entity.apply(after, writeId, now);
+        processes.flush();
+        return Optional.of(mapper.toDomain(entity));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
+    public ReservationProcess confirmCancellation(UUID id, CancellationEvidence evidence, Instant now) {
+        var entity = processes.findById(id.toString()).orElseThrow();
+        var before = mapper.toDomain(entity);
+        var after = before.cancel(evidence, now);
+        if (!after.equals(before)) {
+            entity.apply(after, UUID.randomUUID(), now);
+            closeActive(entity.getId(), now, "PROCESS_CANCELLED");
             processes.flush();
         }
         return mapper.toDomain(entity);

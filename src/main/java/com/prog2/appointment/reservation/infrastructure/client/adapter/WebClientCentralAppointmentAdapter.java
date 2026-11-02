@@ -151,59 +151,11 @@ public final class WebClientCentralAppointmentAdapter implements CentralAppointm
 
     @Override
     public Optional<CentralAppointment> find(ReservationProcess process) {
-        try {
-            String token = access.getAccess().token().value();
-            var response =
-                    client.get()
-                            .uri(
-                                    builder ->
-                                            builder.path("/api/appointments")
-                                                    .queryParam(
-                                                            "externalPatientId",
-                                                            process.patient().externalPatientId())
-                                                    .queryParam("from", process.selection().date())
-                                                    .queryParam("to", process.selection().date())
-                                                    .queryParam("page", 0)
-                                                    .queryParam("size", 100)
-                                                    .build())
-                            .headers(headers -> headers.setBearerAuth(token))
-                            .accept(MediaType.APPLICATION_JSON)
-                            .exchangeToMono(
-                                    result -> {
-                                        if (result.statusCode().value() == 200)
-                                            return result.bodyToMono(
-                                                    CentralAppointmentResponse[].class);
-                                        if (result.statusCode().value() == 401)
-                                            access.rejectAccess(token);
-                                        return result.releaseBody().then(Mono.error(unavailable()));
-                                    })
-                            .block(timeout.multipliedBy(2));
-            if (response == null) return Optional.empty();
-            return selected(response, process);
-        } catch (RuntimeException _) {
-            throw unavailable();
-        }
-    }
-
-    private static Optional<CentralAppointment> selected(
-            CentralAppointmentResponse[] response, ReservationProcess process) {
-        CentralAppointment match = null;
-        for (var item : response) {
-            if (!sameIdentity(item, process)) continue;
-            var candidate = appointment(item);
-            if (candidate == null
-                    || !candidate.belongsTo(process)
-                    || match != null && !match.equals(candidate)) return Optional.empty();
-            match = candidate;
-        }
-        return Optional.ofNullable(match);
-    }
-
-    private static boolean sameIdentity(
-            CentralAppointmentResponse item, ReservationProcess process) {
-        return item != null
-                && process.hold().centralProcessId().equals(item.reservationProcessId())
-                && process.patient().externalPatientId().equals(item.externalPatientId());
+        // Compartir paginación, plazo y deduplicación; no depender de filtros de fecha externos.
+        var batch = listOwn(process.ownerId());
+        if (batch.status() == VerificationStatus.UNAVAILABLE) throw unavailable();
+        if (batch.status() != VerificationStatus.VERIFIED) return Optional.empty();
+        return batch.appointments().stream().filter(value -> value.belongsTo(process)).findFirst();
     }
 
     private static CentralAppointment appointment(CentralAppointmentResponse item) {

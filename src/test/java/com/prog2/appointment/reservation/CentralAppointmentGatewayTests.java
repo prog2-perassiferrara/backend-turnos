@@ -80,18 +80,23 @@ class CentralAppointmentGatewayTests {
     @ValueSource(strings = {"09:00", "09:00:00"})
     void matchesOnlyTheExactProcessPatientAndSelection(String time) {
         provider.appointmentsOverride.set(
-                exchange ->
-                        TestIntegrationSupport.respond(
-                                exchange, 200, appointment("user-42", time, "CONFIRMED")));
+                exchange -> {
+                    if (provider.appointmentFilters.get().containsKey("from")
+                            || provider.appointmentFilters.get().containsKey("to")) {
+                        TestIntegrationSupport.respond(exchange, 500, "{}");
+                        return;
+                    }
+                    exchange.getResponseHeaders().set("X-Total-Count", "1");
+                    TestIntegrationSupport.respond(
+                            exchange, 200, appointment("user-42", time, "CONFIRMED"));
+                });
         var result = gateway.find(SubmitReservationPhoneTests.waiting()).orElseThrow();
         assertThat(result.reservationId()).isEqualTo(8251);
         assertThat(provider.appointmentFilters.get())
                 .containsEntry("externalPatientId", "user-42")
-                .containsEntry("from", "2026-11-02")
-                .containsEntry("to", "2026-11-02")
                 .containsEntry("page", "0")
                 .containsEntry("size", "100")
-                .doesNotContainKey("status");
+                .doesNotContainKeys("status", "from", "to");
         assertThat(provider.appointmentQueries).hasValue(1);
     }
 
@@ -110,14 +115,18 @@ class CentralAppointmentGatewayTests {
     @Test
     void foreignPatientAndDifferentSelectionCannotConfirmTheOwnedProcess() {
         provider.appointmentsOverride.set(
-                exchange ->
-                        TestIntegrationSupport.respond(
-                                exchange, 200, appointment("another-user", "09:00", "CONFIRMED")));
+                exchange -> {
+                    exchange.getResponseHeaders().set("X-Total-Count", "1");
+                    TestIntegrationSupport.respond(
+                            exchange, 200, appointment("another-user", "09:00", "CONFIRMED"));
+                });
         assertThat(gateway.find(SubmitReservationPhoneTests.waiting())).isEmpty();
         provider.appointmentsOverride.set(
-                exchange ->
-                        TestIntegrationSupport.respond(
-                                exchange, 200, appointment("user-42", "09:30", "CONFIRMED")));
+                exchange -> {
+                    exchange.getResponseHeaders().set("X-Total-Count", "1");
+                    TestIntegrationSupport.respond(
+                            exchange, 200, appointment("user-42", "09:30", "CONFIRMED"));
+                });
         assertThat(gateway.find(SubmitReservationPhoneTests.waiting())).isEmpty();
     }
 
@@ -171,6 +180,54 @@ class CentralAppointmentGatewayTests {
                     return value.substring(1, value.length() - 1);
                 })
                 .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+    }
+
+    @Test
+    void exactLookupFindsAFailedProcessOnALaterPageWithoutDateFilters() {
+        provider.appointmentsOverride.set(exchange -> {
+            int page = Integer.parseInt(provider.appointmentFilters.get().get("page"));
+            exchange.getResponseHeaders().set("X-Total-Count", "101");
+            if (page == 0) {
+                exchange.getResponseHeaders().set("Link", "<http://untrusted.test/next>; rel=\"next\"");
+            }
+            TestIntegrationSupport.respond(exchange, 200,
+                    page == 0 ? rows(100, 0) : appointment("user-42", "09:00", "FAILED"));
+        });
+        var result = gateway.find(SubmitReservationPhoneTests.waiting()).orElseThrow();
+        assertThat(result.state()).isEqualTo(
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.FAILED);
+        assertThat(provider.appointmentQueries).hasValue(2);
+        assertThat(provider.appointmentFilters.get())
+                .containsEntry("externalPatientId", "user-42")
+                .containsEntry("page", "1")
+                .doesNotContainKeys("from", "to", "status");
+    }
+
+    @Test
+    void exactLookupDoesNotAcceptAConflictingDuplicateOnALaterPage() {
+        provider.appointmentsOverride.set(exchange -> {
+            int page = Integer.parseInt(provider.appointmentFilters.get().get("page"));
+            exchange.getResponseHeaders().set("X-Total-Count", "101");
+            if (page == 0) exchange.getResponseHeaders().set("Link", "</next>; rel=\"next\"");
+            TestIntegrationSupport.respond(exchange, 200, page == 0
+                    ? rows(100, 0).replace("\"process-0\"", "\"process-fictional\"")
+                    : appointment("user-42", "09:00", "CANCELLED"));
+        });
+        assertThat(gateway.find(SubmitReservationPhoneTests.waiting())).isEmpty();
+        assertThat(provider.appointmentQueries).hasValue(2);
+    }
+
+    @Test
+    void exactLookupKeepsAnIncompleteScanInconclusiveAndStopsAtItsBudget() {
+        provider.appointmentsOverride.set(exchange -> {
+            int page = Integer.parseInt(provider.appointmentFilters.get().get("page"));
+            exchange.getResponseHeaders().set("X-Total-Count", "400");
+            exchange.getResponseHeaders().set("Link", "</next>; rel=\"next\"");
+            TestIntegrationSupport.respond(exchange, 200, rows(100, page * 100)
+                    .replace("\"process-0\"", "\"process-fictional\""));
+        });
+        assertThat(gateway.find(SubmitReservationPhoneTests.waiting())).isEmpty();
+        assertThat(provider.appointmentQueries).hasValue(3);
     }
 
     @Test

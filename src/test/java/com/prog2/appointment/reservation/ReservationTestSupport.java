@@ -51,6 +51,10 @@ public final class ReservationTestSupport implements AutoCloseable {
     public final AtomicInteger appointmentQueries = new AtomicInteger();
     public final AtomicReference<HttpHandler> appointmentsOverride = new AtomicReference<>();
     public final AtomicReference<Map<String, String>> appointmentFilters = new AtomicReference<>();
+    public final AtomicInteger cancellations = new AtomicInteger();
+    public final AtomicReference<HttpHandler> cancellationOverride = new AtomicReference<>();
+    public final AtomicReference<String> cancellationPath = new AtomicReference<>();
+    public final AtomicReference<String> cancellationBody = new AtomicReference<>();
     public final AtomicInteger creates = new AtomicInteger();
     public final AtomicInteger confirmations = new AtomicInteger();
     public final AtomicInteger credentialFailures = new AtomicInteger();
@@ -59,6 +63,8 @@ public final class ReservationTestSupport implements AutoCloseable {
     public final AtomicBoolean dropCreation = new AtomicBoolean();
     public final AtomicInteger creationStatus = new AtomicInteger(201);
     public final AtomicInteger confirmationStatus = new AtomicInteger(202);
+    public final AtomicReference<java.time.Instant> holdExpiresAt =
+            new AtomicReference<>(ReservationProcessTests.HOLD.expiresAt());
     public final AtomicReference<Hold> last = new AtomicReference<>();
     public final AtomicReference<String> submittedFirstName = new AtomicReference<>();
     public final AtomicReference<String> submittedPatient = new AtomicReference<>();
@@ -98,6 +104,10 @@ public final class ReservationTestSupport implements AutoCloseable {
     }
 
     public void reset() {
+        cancellations.set(0);
+        cancellationOverride.set(null);
+        cancellationPath.set(null);
+        cancellationBody.set(null);
         appointmentQueries.set(0);
         appointmentsOverride.set(null);
         appointmentFilters.set(null);
@@ -113,6 +123,7 @@ public final class ReservationTestSupport implements AutoCloseable {
         dropCreation.set(false);
         creationStatus.set(201);
         confirmationStatus.set(202);
+        holdExpiresAt.set(ReservationProcessTests.HOLD.expiresAt());
         beforeConfirm.set(hold -> {});
         createBarrier.set(null);
         createOverride.set(null);
@@ -184,14 +195,7 @@ public final class ReservationTestSupport implements AutoCloseable {
                                     PHONE_TOPIC)));
             return;
         }
-        if (path.equals("/api/appointments")) {
-            appointmentQueries.incrementAndGet();
-            appointmentFilters.set(query(exchange.getRequestURI().getRawQuery()));
-            var custom = appointmentsOverride.get();
-            if (custom != null) custom.handle(exchange);
-            else reply(exchange, 200, "[]");
-            return;
-        }
+        if (appointmentOperation(exchange, path)) return;
         if (path.equals("/api/appointment-occupancies")) {
             occupancyQueries.incrementAndGet();
             var custom = occupanciesOverride.get();
@@ -245,6 +249,30 @@ public final class ReservationTestSupport implements AutoCloseable {
             return;
         }
         reply(exchange, 404, "{}");
+    }
+
+    private boolean appointmentOperation(HttpExchange exchange, String path) throws IOException {
+        if (path.equals("/api/appointments")) {
+            appointmentQueries.incrementAndGet();
+            appointmentFilters.set(query(exchange.getRequestURI().getRawQuery()));
+            var custom = appointmentsOverride.get();
+            if (custom != null) custom.handle(exchange);
+            else reply(exchange, 200, "[]");
+            return true;
+        }
+        if (path.startsWith("/api/appointments/") && path.endsWith("/cancel")) {
+            cancellations.incrementAndGet();
+            cancellationPath.set(path);
+            cancellationBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            var custom = cancellationOverride.get();
+            if (custom != null) custom.handle(exchange);
+            else reply(exchange, 200, json.writeValueAsString(Map.of(
+                    "reservationProcessId", path.substring("/api/appointments/".length(), path.length() - "/cancel".length()),
+                    "reservationId", 8251, "status", "CANCELLED",
+                    "cancelledAt", ReservationProcessTests.NOW.toString())));
+            return true;
+        }
+        return false;
     }
 
     private void create(HttpExchange exchange) throws IOException {
@@ -310,7 +338,7 @@ public final class ReservationTestSupport implements AutoCloseable {
                                 "status",
                                 "HELD",
                                 "expiresAt",
-                                ReservationProcessTests.HOLD.expiresAt().toString())));
+                                holdExpiresAt.get().toString())));
     }
 
     private void confirm(HttpExchange exchange) throws IOException {
@@ -346,7 +374,7 @@ public final class ReservationTestSupport implements AutoCloseable {
                                 "status",
                                 "WAITING_FOR_PHONE",
                                 "expiresAt",
-                                ReservationProcessTests.HOLD.expiresAt().toString())));
+                                holdExpiresAt.get().toString())));
     }
 
     /** Simula la liberación central de posiciones, sin inferir propiedad en el backend. */
