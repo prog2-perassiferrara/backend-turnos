@@ -112,6 +112,33 @@ public record ReservationProcess(
         return change(ReservationPhase.CONFIRMING, hold, requestEventId, reservationId, null, null);
     }
 
+    /**
+     * @param now instante de evaluación del plazo central
+     * @return EXPIRED solo si el hold conocido venció sin comenzar la confirmación
+     */
+    public ReservationProcess expireUnconfirmedHold(Instant now) {
+        if (phase != ReservationPhase.HELD || hold == null || now.isBefore(hold.expiresAt())) return this;
+        return expireKnownHold(now);
+    }
+
+    /**
+     * Solo puede usarlo quien conserva su reclamación y todavía no invocó el transporte.
+     * Tras un reinicio CONFIRMING no demuestra que el POST no se haya enviado.
+     * @param claimed permiso propio obtenido en esta ejecución
+     * @param now instante justo antes del transporte
+     * @return vencimiento seguro o estado actual si otra transición avanzó
+     */
+    public ReservationProcess expireUnsentConfirmation(ReservationProcess claimed, Instant now) {
+        if (phase != ReservationPhase.CONFIRMING || !writeId.equals(claimed.writeId())
+                || hold == null || now.isBefore(hold.expiresAt())) return this;
+        return expireKnownHold(now);
+    }
+
+    private ReservationProcess expireKnownHold(Instant now) {
+        return change(ReservationPhase.EXPIRED, hold, requestEventId, reservationId,
+                "UNCONFIRMED_HOLD_EXPIRED", now);
+    }
+
     /** Una solicitud Kafka ya recibida prevalece sobre la respuesta REST más lenta. */
     public ReservationProcess acceptInitialConfirmation(HoldDetails value) {
         if (!Objects.equals(hold, value)) {

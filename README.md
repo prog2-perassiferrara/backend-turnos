@@ -650,8 +650,8 @@ Se utiliza la versión devuelta por la consulta, después del enfriamiento
 al aceptar el nuevo ciclo; repetir una anterior no abre otro. Las consultas y la
 solicitud original sin body nunca reinician ese presupuesto. Se reutilizan el
 timeout HTTP y la separación existentes; el máximo de tres es específico de
-cancelación. Las tareas periódicas de teléfono y cancelación usan un pool de dos
-hilos para que una espera REST no bloquee la otra publicación.
+cancelación. Las tareas periódicas de teléfono, cancelación y recuperación usan
+un pool de tres hilos para que las esperas REST no bloqueen la publicación.
 
 Una respuesta REST válida basta para verificar cancelación aunque Kafka no esté
 disponible. Catálogo no se consulta para esta operación si el acceso técnico
@@ -669,6 +669,42 @@ no se comunica como liberación; el reloj tampoco decide el resultado de una ope
 Contrato y diseño: [SPEC](docs/features/cancelacion-abandono/SPEC.md),
 [PLAN](docs/features/cancelacion-abandono/PLAN.md) y
 [TASKS](docs/features/cancelacion-abandono/TASKS.md).
+
+## Recuperar procesos pendientes
+
+CU-09 revisa el progreso persistido después del arranque y periódicamente, sin
+necesitar que KMP consulte. Atiende lotes de hasta diez procesos y reutiliza los
+parámetros de reserva: tres revisiones por ciclo, cinco segundos entre intentos y
+pausa de treinta segundos por defecto. La próxima fecha y el contador de revisión
+se conservan con V7; son independientes de los presupuestos de teléfono y cancelación.
+
+- Un hold conocido y vigente puede continuar su confirmación inicial solo si nunca
+  se intentó y no hay abandono. Requiere canal preparado y permiso propio conservado
+  antes del POST. Si ya venció sin ese intento, queda `EXPIRED` y libera el pendiente.
+- Una confirmación intentada o incierta se verifica mediante REST, sin repetirla.
+  La consulta usa el paciente propio, paginación acotada y coincidencia exacta.
+  Ausencia o recorrido incompleto no prueban cierre. `FAILED` central se conserva
+  como fallo, sin atribuirle una causa de vencimiento.
+- Una creación interrumpida sin IDs recuperables se archiva según CU-04; recuperar
+  el registro no crea otro hold ni atribuye propiedad a una ocupación.
+- Los resultados inciertos se siguen verificando de forma espaciada después de
+  `expiresAt`, sin nuevas confirmaciones o teléfonos. El pendiente no se libera
+  por reinicio o por el reloj mientras el cierre siga incierto.
+
+La exclusión por UUID protege trabajo activo en esta instancia; las fases y las
+escrituras SQL conservan la autoridad sobre los efectos. Los recibos soportados
+guardados sin asociación se reexaminan cuando ya existe su proceso local. Se valida
+el contenido original y se aplica una sola vez sobre la versión actual, sin insertar
+otro recibo ni volver a confirmar offsets. Los tipos desconocidos no se reinterpretan.
+
+Los workers existentes conservan los envíos y las cancelaciones. Agotar los tres
+intentos de cancelación sigue requiriendo reintento explícito para otro POST; una
+verificación automática puede resolver el resultado sin abrir ese nuevo ciclo.
+Las consultas propias mantienen sus contratos y no exponen identificadores técnicos.
+
+Contratos y diseño: [SPEC](docs/features/recuperacion-procesos/SPEC.md),
+[PLAN](docs/features/recuperacion-procesos/PLAN.md) y
+[TASKS](docs/features/recuperacion-procesos/TASKS.md).
 
 ## Archivos y responsabilidades
 

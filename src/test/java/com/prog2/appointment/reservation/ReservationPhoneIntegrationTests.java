@@ -129,6 +129,10 @@ class ReservationPhoneIntegrationTests {
         jdbc.update(
                 "UPDATE reservation_phone_submission SET closed_at = CURRENT_TIMESTAMP(6),"
                         + " next_attempt_at = NULL WHERE closed_at IS NULL");
+        // Cada caso conserva solo su trabajo: la recuperación automática también atiende otros propietarios.
+        jdbc.update("DELETE FROM reservation_inbox");
+        jdbc.update("DELETE FROM reservation_phone_submission");
+        jdbc.update("DELETE FROM reservation_process");
         PROVIDERS.reset();
         lastSent = -1;
         await().atMost(Duration.ofSeconds(25))

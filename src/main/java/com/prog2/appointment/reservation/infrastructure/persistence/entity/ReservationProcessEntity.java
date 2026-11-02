@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.entity;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -98,6 +99,12 @@ public class ReservationProcessEntity {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "recovery_attempts", nullable = false)
+    private int recoveryAttempts;
+
+    @Column(name = "recovery_next_attempt_at")
+    private Instant recoveryNextAttemptAt;
+
     protected ReservationProcessEntity() {}
 
     public ReservationProcessEntity(ReservationProcess process, Instant now) {
@@ -144,6 +151,26 @@ public class ReservationProcessEntity {
 
     public String getId() {
         return id;
+    }
+
+    /** Elegibilidad técnica, separada del presupuesto de efectos y del estado del agregado. */
+    public boolean recoveryDue(Instant now, Duration initialDelay) {
+        if ("PENDING".equals(cancellationStatus) && cancellationAttempts < 3) return false;
+        if (closedAt != null && !"PENDING".equals(cancellationStatus)) return false;
+        var next = recoveryNextAttemptAt == null ? updatedAt.plus(initialDelay) : recoveryNextAttemptAt;
+        return !now.isBefore(next);
+    }
+
+    /** No cambia writeId, updatedAt ni contadores de teléfono/cancelación. */
+    public void scheduleRecovery(Instant now, int attempts, Duration retry, Duration cooldown) {
+        recoveryAttempts = recoveryAttempts >= attempts ? 1 : recoveryAttempts + 1;
+        recoveryNextAttemptAt = now.plus(recoveryAttempts >= attempts ? cooldown : retry);
+    }
+
+    /** Conserva una reserva posterior ya concedida a otro recorrido. */
+    public void deferRecovery(Instant nextAttempt) {
+        if (recoveryNextAttemptAt == null || recoveryNextAttemptAt.isBefore(nextAttempt))
+            recoveryNextAttemptAt = nextAttempt;
     }
 
     public long getOwnerId() {

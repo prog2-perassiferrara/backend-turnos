@@ -82,4 +82,19 @@ public class ReservationInboxEntity {
     public String getOutcome() {
         return outcome;
     }
+
+    /** @return si el recibo conserva una asociación todavía no resuelta */
+    public boolean awaitsAssociation() {
+        return "DEFERRED".equals(outcome) && "UNKNOWN_PROCESS".equals(rejection);
+    }
+
+    /** @return origen original para revalidar correlación, sin emitir otra entrega Kafka */
+    public ReservationDelivery.Origin origin() {
+        return new ReservationDelivery.Origin(topic, partition, offset, key);
+    }
+
+    /** @return contenido original para el parser; no debe imprimirse ni exponerse por HTTP */
+    public String getPayload() {
+        return payload;
+    }
 }

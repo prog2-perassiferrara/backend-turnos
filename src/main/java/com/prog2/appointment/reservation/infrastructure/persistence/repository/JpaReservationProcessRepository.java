@@ -26,6 +26,13 @@ public interface JpaReservationProcessRepository
 
     Optional<ReservationProcessEntity> findByCentralProcessId(String centralProcessId);
 
+    @Query(value = "SELECT id FROM reservation_process WHERE (closed_at IS NULL OR cancellation_status = 'PENDING')"
+            + " AND (cancellation_status IS NULL OR cancellation_status <> 'PENDING' OR cancellation_attempts >= 3)"
+            + " AND ((recovery_next_attempt_at IS NULL AND updated_at <= :initialCutoff)"
+            + " OR recovery_next_attempt_at <= :now)"
+            + " ORDER BY COALESCE(recovery_next_attempt_at, updated_at), id", nativeQuery = true)
+    List<String> dueRecovery(@Param("now") Instant now, @Param("initialCutoff") Instant initialCutoff, Pageable page);
+
     @Query(
             value =
                     "SELECT * FROM reservation_process WHERE owner_id = :owner AND active_owner_id"
