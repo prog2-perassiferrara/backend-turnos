@@ -2,6 +2,7 @@ package com.prog2.appointment.reservation.infrastructure.config;
 
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
 import com.prog2.appointment.reservation.application.usecases.RecoverReservationProcessesUseCaseImpl;
+import com.prog2.appointment.reservation.domain.model.ReservationRecoveryPolicy;
 import com.prog2.appointment.reservation.infrastructure.scheduling.ReservationRecoveryDispatcher;
 
 
@@ -194,8 +195,8 @@ public class ReservationConfiguration {
             StartReservationUseCase start, ReservationExecutionGuard guard, Clock clock,
             ReservationProperties properties) {
         return new RecoverReservationProcessesUseCaseImpl(repository, central, start, guard, clock,
-                properties.attempts(), properties.retryDelay(), properties.preparationCooldown(),
-                properties.resultVerificationDelay());
+                new ReservationRecoveryPolicy(properties.attempts(), properties.retryDelay(),
+                        properties.preparationCooldown(), properties.resultVerificationDelay()));
     }
 
     @Bean

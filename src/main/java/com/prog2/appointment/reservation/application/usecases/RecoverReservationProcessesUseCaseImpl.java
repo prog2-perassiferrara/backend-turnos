@@ -6,13 +6,13 @@ import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.exception.ReservationStorageException;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
+import com.prog2.appointment.reservation.domain.model.ReservationRecoveryPolicy;
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
 import com.prog2.appointment.reservation.domain.ports.in.StartReservationUseCase;
 import com.prog2.appointment.reservation.domain.ports.out.CentralAppointmentGateway;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -24,33 +24,29 @@ public final class RecoverReservationProcessesUseCaseImpl implements RecoverRese
     private final StartReservationUseCase start;
     private final ReservationExecutionGuard guard;
     private final Clock clock;
-    private final int attempts;
-    private final Duration retry;
-    private final Duration cooldown;
-    private final Duration verificationDelay;
+    private final ReservationRecoveryPolicy policy;
 
     public RecoverReservationProcessesUseCaseImpl(ReservationProcessRepository repository,
             CentralAppointmentGateway central, StartReservationUseCase start, ReservationExecutionGuard guard,
-            Clock clock, int attempts, Duration retry, Duration cooldown, Duration verificationDelay) {
+            Clock clock, ReservationRecoveryPolicy policy) {
         this.repository = repository;
         this.central = central;
         this.start = start;
         this.guard = guard;
         this.clock = clock;
-        this.attempts = attempts;
-        this.retry = retry;
-        this.cooldown = cooldown;
-        this.verificationDelay = verificationDelay;
+        this.policy = policy;
     }
 
     @Override
+    // Cada excepción expone failure() en su propio tipo; un multicatch pierde ese contrato.
+    @SuppressWarnings("java:S2147")
     public void recoverDue() {
         try {
             repository.replayDeferredKnown(10);
         } catch (ReservationStorageException _) {
             LOG.log(System.Logger.Level.WARNING, "Deferred reservation recovery unavailable");
         }
-        for (var id : repository.dueRecovery(clock.instant(), cooldown, 10)) {
+        for (var id : repository.dueRecovery(clock.instant(), policy.cooldown(), 10)) {
             if (Thread.currentThread().isInterrupted()) return;
             try {
                 recover(id);
@@ -71,13 +67,14 @@ public final class RecoverReservationProcessesUseCaseImpl implements RecoverRese
     private void recover(UUID id) {
         var acquired = guard.tryAcquire(id);
         if (acquired.isEmpty()) {
-            repository.deferRecovery(id, clock.instant().plus(retry));
+            repository.deferRecovery(id, clock.instant().plus(policy.retryDelay()));
             return;
         }
         boolean resume = false;
-        try (var execution = acquired.orElseThrow()) {
+        try (var _ = acquired.orElseThrow()) {
             var now = clock.instant();
-            var claimed = repository.beginRecovery(id, now, attempts, retry, cooldown);
+            var claimed = repository.beginRecovery(
+                    id, now, policy.attempts(), policy.retryDelay(), policy.cooldown());
             if (claimed.isEmpty()) return;
             var process = claimed.orElseThrow();
             if (process.hold() == null) {
@@ -102,6 +99,6 @@ public final class RecoverReservationProcessesUseCaseImpl implements RecoverRese
         if (process.phase() != ReservationPhase.WAITING_FOR_RESULT) return true;
         var phone = repository.latestPhone(process.id());
         return phone.isEmpty() || phone.get().publishedAt() == null
-                || !now.isBefore(phone.get().publishedAt().plus(verificationDelay));
+                || !now.isBefore(phone.get().publishedAt().plus(policy.verificationDelay()));
     }
 }

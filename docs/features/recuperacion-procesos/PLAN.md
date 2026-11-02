@@ -196,6 +196,7 @@ con el proyecto y justifica las incorporaciones. No agregues dependencias por de
 - Sin dependencias Maven, servicios, secretos o permisos nuevos. Reutilizar Spring scheduling/WebClient/JPA, Flyway/MySQL, acceso técnico y reloj existentes.
 - Wiring por constructor; parser como bean compartido por recepción y reconstitución de recibos, sin crear colaboradores de negocio desde los casos de uso. Campos obligatorios final.
 - Reutilizar parámetros de reserva vigentes; no agregar variables obligatorias. Elevar `spring.task.scheduling.pool.size` de 2 a 3 para las tareas de teléfono, cancelación y recuperación general; ningún pool por proceso.
+- Ajuste aprobado el 2026-11-02: agrupar presupuesto y plazos en el valor inmutable `ReservationRecoveryPolicy`, construido en el wiring con los parámetros existentes. Conserva el comportamiento y los RF/CA; afecta al constructor de recuperación, su configuración y sus pruebas.
 - El despliegue de referencia conserva una aplicación Turnos. El guard local no se presenta como exclusión distribuida; escalar instancias requiere revisar esa coordinación.
 
 ## Estrategia de validación

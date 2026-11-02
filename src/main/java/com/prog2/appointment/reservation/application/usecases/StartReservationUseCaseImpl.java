@@ -33,6 +33,8 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
     private final ReservationExecutionGuard guard;
     private final int holdAttempts;
 
+    // Los seis colaboradores y el reloj se inyectan explícitamente; agruparlos ocultaría dependencias.
+    @SuppressWarnings("java:S107")
     public StartReservationUseCaseImpl(
             ReservationPatientGateway patients,
             ReservableSlotGateway slots,
@@ -101,7 +103,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
     private ReservationProcess runGuarded(UUID id, boolean creating) {
         var acquired = guard.tryAcquire(id);
         if (acquired.isEmpty()) return current(id);
-        try (var execution = acquired.orElseThrow()) {
+        try (var _ = acquired.orElseThrow()) {
             // Otro ejecutor pudo avanzar entre insertar la intención y obtener este scope.
             var process = current(id);
             if (!creating && (process.phase() != ReservationPhase.HELD || process.abandonmentPending()))

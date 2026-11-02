@@ -238,7 +238,7 @@ class ReservationRecoveryIntegrationTests {
     @Test
     void aLiveCreationIsNotArchivedAndAnOrphanNeverCreatesAnotherHold() {
         var process = save(candidate(false)); clock.value.set(NOW.plusSeconds(31));
-        try (var scope = guard.tryAcquire(process.id()).orElseThrow()) {
+        try (var _ = guard.tryAcquire(process.id()).orElseThrow()) {
             recover.recoverDue();
             assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CREATING_HOLD);
         }

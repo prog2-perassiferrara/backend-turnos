@@ -43,8 +43,9 @@ class ReservationRecoveryTests {
     private RecoverReservationProcessesUseCaseImpl
             recovery(Instant now, CentralAppointmentGateway central) {
         return new RecoverReservationProcessesUseCaseImpl(
-                repository, central, start, guard, Clock.fixed(now, ZoneOffset.UTC), 3,
-                Duration.ofSeconds(5), Duration.ofSeconds(30), Duration.ofSeconds(30));
+                repository, central, start, guard, Clock.fixed(now, ZoneOffset.UTC),
+                new ReservationRecoveryPolicy(3, Duration.ofSeconds(5),
+                        Duration.ofSeconds(30), Duration.ofSeconds(30)));
     }
 
     @Test
@@ -83,7 +84,7 @@ class ReservationRecoveryTests {
                 ReservationFailure.APPOINTMENT_STATUS_UNAVAILABLE, false, false));
         recovery(NOW.plusSeconds(31), central).recoverDue();
         verify(central, times(2)).find(any());
-        try (var scope = guard.tryAcquire(first.id()).orElseThrow()) {
+        try (var _ = guard.tryAcquire(first.id()).orElseThrow()) {
             assertThat(repository.find(first.id()).orElseThrow().isPending()).isTrue();
         }
     }
@@ -122,7 +123,7 @@ class ReservationRecoveryTests {
         assertThatThrownBy(() -> start.resumeKnownHold(id))
                 .isInstanceOf(com.prog2.appointment.reservation.application.exception.ReservationOperationException.class);
         assertThat(start.resumeKnownHold(id).phase()).isEqualTo(ReservationPhase.CONFIRMATION_UNCERTAIN);
-        try (var scope = guard.tryAcquire(id).orElseThrow()) {
+        try (var _ = guard.tryAcquire(id).orElseThrow()) {
             assertThat(repository.find(id).orElseThrow().isPending()).isTrue();
         }
         verify(holds, times(1)).confirm(any());
