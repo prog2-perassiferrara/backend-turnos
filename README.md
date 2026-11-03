@@ -53,6 +53,7 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `JWT_PRIVATE_KEY_PATH` | Archivo externo PKCS#8 de privada RSA, al menos 2048 bits. En Compose es la ruta del host que se monta dentro del contenedor. |
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
 | `API_DOCS_ENABLED` | Opcional, `false` por defecto. Habilita OpenAPI y Swagger UI solo para lectura anónima; no amplía el acceso a las APIs de negocio ni cambia la autenticación JWT. |
+| `TECHNICAL_INTEGRATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los clientes de integración con Catálogo y cátedra, `5s`; total por llamada de `10s`. No afecta los presupuestos propios de disponibilidad o reservas. |
 | `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
 | `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
 | `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los POST y las consultas de ocupaciones/reservas, `5s`; total por llamada de `10s`. Sin replay del transporte. |

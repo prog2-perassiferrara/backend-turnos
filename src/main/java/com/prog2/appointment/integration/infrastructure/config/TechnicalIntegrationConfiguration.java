@@ -2,6 +2,7 @@ package com.prog2.appointment.integration.infrastructure.config;
 
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
@@ -19,15 +20,18 @@ import com.prog2.appointment.integration.infrastructure.client.adapter.WebClient
 @Configuration(proxyBeanMethods = false)
 public class TechnicalIntegrationConfiguration {
     @Bean
-    CatalogTechnicalTokenGateway catalogTechnicalTokenGateway(TechnicalAccessProperties properties, ServiceTokenIssuer issuer) {
+    CatalogTechnicalTokenGateway catalogTechnicalTokenGateway(TechnicalAccessProperties properties,
+            ServiceTokenIssuer issuer,
+            @Value("${app.integration.http-timeout}") Duration httpTimeout) {
         return new WebClientCatalogTechnicalTokenAdapter(
-                new SafeIntegrationHttpClient(properties.catalogBaseUrl(), false, Duration.ofSeconds(5)), issuer);
+                new SafeIntegrationHttpClient(properties.catalogBaseUrl(), false, httpTimeout), issuer);
     }
 
     @Bean
-    CentralIntegrationGateway centralIntegrationGateway(TechnicalAccessProperties properties) {
+    CentralIntegrationGateway centralIntegrationGateway(TechnicalAccessProperties properties,
+            @Value("${app.integration.http-timeout}") Duration httpTimeout) {
         return new WebClientCentralIntegrationAdapter(
-                new SafeIntegrationHttpClient(properties.centralBaseUrl(), true, Duration.ofSeconds(5)));
+                new SafeIntegrationHttpClient(properties.centralBaseUrl(), true, httpTimeout));
     }
 
     @Bean

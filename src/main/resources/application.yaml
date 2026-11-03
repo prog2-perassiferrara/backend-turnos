@@ -53,6 +53,8 @@ logging:
 app:
   api-docs:
     enabled: ${API_DOCS_ENABLED:false}
+  integration:
+    http-timeout: ${TECHNICAL_INTEGRATION_HTTP_TIMEOUT:5s}
   reservation:
     http-timeout: ${RESERVATION_HTTP_TIMEOUT:5s}
     metadata-timeout: ${RESERVATION_METADATA_TIMEOUT:5s}
