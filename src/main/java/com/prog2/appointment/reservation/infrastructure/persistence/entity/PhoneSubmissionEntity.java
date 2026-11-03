@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.entity;
 
+import lombok.Getter;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 
 import jakarta.persistence.Column;
@@ -16,45 +17,59 @@ import java.time.Instant;
 public class PhoneSubmissionEntity {
     @Id
     @Column(name = "id", length = 36)
+    @Getter
     private String id;
 
     @Column(name = "process_id", length = 36)
+    @Getter
     private String processId;
 
     @Column(name = "group_id", length = 255)
+    @Getter
     private String groupId;
 
     @Column(name = "central_process_id", length = 255)
+    @Getter
     private String centralProcessId;
 
     @Column(name = "hold_id", length = 255)
+    @Getter
     private String holdId;
 
     @Column(name = "request_event_id", length = 255)
+    @Getter
     private String requestEventId;
 
     @Column(name = "phone_number", length = 16)
+    @Getter
     private String phoneNumber;
 
     @Column(name = "occurred_at")
+    @Getter
     private Instant occurredAt;
 
     @Column(name = "expires_at")
+    @Getter
     private Instant expiresAt;
 
     @Column(name = "published_at")
+    @Getter
     private Instant publishedAt;
 
     @Column(name = "closed_at")
+    @Getter
     private Instant closedAt;
 
     @Column(name = "cycle_attempt")
+    @Getter
     private int cycleAttempt;
 
     @Column(name = "next_attempt_at")
+    @Getter
     private Instant nextAttemptAt;
 
     @Column(name = "last_failure", length = 64)
+    @Getter
     private String lastFailure;
 
     @Version
@@ -87,63 +102,4 @@ public class PhoneSubmissionEntity {
         lastFailure = phone.lastFailure();
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public String getProcessId() {
-        return processId;
-    }
-
-    public String getGroupId() {
-        return groupId;
-    }
-
-    public String getCentralProcessId() {
-        return centralProcessId;
-    }
-
-    public String getHoldId() {
-        return holdId;
-    }
-
-    public String getRequestEventId() {
-        return requestEventId;
-    }
-
-    public String getPhoneNumber() {
-        return phoneNumber;
-    }
-
-    public Instant getOccurredAt() {
-        return occurredAt;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public Instant getPublishedAt() {
-        return publishedAt;
-    }
-
-    public Instant getClosedAt() {
-        return closedAt;
-    }
-
-    public int getCycleAttempt() {
-        return cycleAttempt;
-    }
-
-    public Instant getNextAttemptAt() {
-        return nextAttemptAt;
-    }
-
-    public String getLastFailure() {
-        return lastFailure;
-    }
-
-    public Long getVersion() {
-        return version;
-    }
 }

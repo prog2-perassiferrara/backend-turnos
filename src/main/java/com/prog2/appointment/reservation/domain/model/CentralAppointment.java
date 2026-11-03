@@ -3,7 +3,6 @@ package com.prog2.appointment.reservation.domain.model;
 import com.prog2.appointment.reservation.domain.enums.CentralAppointmentState;
 
 import java.util.Objects;
-import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 
 /** Evidencia REST de una reserva; su ausencia no demuestra cierre ni liberación. */
 public record CentralAppointment(
@@ -33,16 +32,4 @@ public record CentralAppointment(
                 && (process.reservationId() == null || process.reservationId() == reservationId);
     }
 
-    /**
-     * @return si el resultado observado es compatible con el progreso actual, sin reabrir cierres
-     */
-    public boolean agreesWith(ReservationProcess process) {
-        if (!belongsTo(process)) return false;
-        return switch (state) {
-            case PHONE_PENDING -> !process.phase().isFinal();
-            case CONFIRMED -> process.phase() == ReservationPhase.CONFIRMED;
-            case CANCELLED -> process.phase() == ReservationPhase.CANCELLED;
-            case FAILED -> process.phase() == ReservationPhase.FAILED;
-        };
-    }
 }

@@ -74,7 +74,6 @@ class ReservationPhoneIntegrationTests {
     private final ControlledPublisher publisher;
     private final HttpClient http = HttpClient.newHttpClient();
     private String token;
-    private long owner;
     private long lastSent = -1;
 
     ReservationPhoneIntegrationTests(
@@ -130,7 +129,7 @@ class ReservationPhoneIntegrationTests {
                 "UPDATE reservation_phone_submission SET closed_at = CURRENT_TIMESTAMP(6),"
                         + " next_attempt_at = NULL WHERE closed_at IS NULL");
         // Cada caso conserva solo su trabajo: la recuperación automática también atiende otros propietarios.
-        jdbc.update("DELETE FROM reservation_inbox");
+        jdbc.update("DELETE FROM reservation_processed_event");
         jdbc.update("DELETE FROM reservation_phone_submission");
         jdbc.update("DELETE FROM reservation_process");
         PROVIDERS.reset();
@@ -140,7 +139,6 @@ class ReservationPhoneIntegrationTests {
                         () -> assertThatCode(channel::requireReady).doesNotThrowAnyException());
         String login = "phone_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         token = account(login);
-        owner = jdbc.queryForObject("SELECT id FROM app_user WHERE login=?", Long.class, login);
     }
 
     @AfterEach
@@ -420,7 +418,7 @@ class ReservationPhoneIntegrationTests {
     }
 
     @Test
-    void acceptanceRollbackIsNotReportedAsAcceptedAndCommitResponseLossIsRecovered()
+    void acceptanceCommitErrorsAreConservativeAndTheSameUuidRecoversItsDurableOutbox()
             throws Exception {
         UUID id = waiting();
         UUID request = UUID.randomUUID();
@@ -430,9 +428,15 @@ class ReservationPhoneIntegrationTests {
         assertThat(repository.findPhone(request)).isEmpty();
         phase(id, ReservationPhase.WAITING_FOR_PHONE);
         faults.arm(CommitFaultDataSource.Mode.AFTER, "insert into reservation_phone_submission", 1);
-        assertThat(phone(id, request, "1234567").statusCode()).isEqualTo(200);
-        assertThat(repository.findPhone(request)).isPresent();
+        assertThat(phone(id, request, "1234567").statusCode()).isEqualTo(503);
+        var saved = repository.findPhone(request).orElseThrow();
         phase(id, ReservationPhase.PHONE_QUEUED);
+        assertThat(phone(id, request, "1234567").statusCode()).isEqualTo(200);
+        var repeated = repository.findPhone(request).orElseThrow();
+        assertThat(repeated.id()).isEqualTo(saved.id());
+        assertThat(repeated.event()).isEqualTo(saved.event());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_phone_submission WHERE process_id=?",
+                Integer.class, id.toString())).isEqualTo(1);
     }
 
     @Test
@@ -585,55 +589,35 @@ class ReservationPhoneIntegrationTests {
     }
 
     @Test
-    void centralAbsenceAndFailureReturnLocalProgressWithWarningsAndExactFilters() throws Exception {
+    void getReadsDurableUncertaintyWithoutCallingCentralOrInventingExpiry() throws Exception {
         UUID id = waiting();
-        UUID request = UUID.randomUUID();
-        phone(id, request, "1234567");
-        jdbc.update(
-                "UPDATE reservation_process SET phase='RECONCILIATION_REQUIRED' WHERE id=?",
-                id.toString());
-        var missing = get(id, token);
-        assertThat(missing.statusCode()).isEqualTo(200);
-        assertThat(body(missing).path("verificationStatus").asString()).isEqualTo("INCONCLUSIVE");
-        assertThat(PROVIDERS.appointmentFilters.get())
-                .containsEntry("externalPatientId", "user-" + owner)
-                .containsEntry("page", "0")
-                .containsEntry("size", "100")
-                .doesNotContainKeys("from", "to", "status");
-        PROVIDERS.appointmentsOverride.set(
-                exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
-        assertThat(body(get(id, token)).path("verificationStatus").asString())
-                .isEqualTo("UNAVAILABLE");
-        assertThat(PROVIDERS.appointmentQueries).hasValue(2);
-        assertThat(PROVIDERS.confirmations).hasValue(1);
-        assertThat(PROVIDERS.creates).hasValue(1);
+        jdbc.update("UPDATE reservation_process SET phase='RECONCILIATION_REQUIRED' WHERE id=?", id.toString());
+        PROVIDERS.appointmentsOverride.set(exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
+        var response = get(id, token);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(body(response).path("state").asString()).isEqualTo("RECONCILIATION_REQUIRED");
+        assertThat(body(response).has("verificationStatus")).isFalse();
+        assertThat(body(response).has("verifiedAt")).isFalse();
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
     }
 
     @Test
-    void verifiedCentralResultClosesBothRowsAndForeignEvidenceIsIgnored() throws Exception {
+    void reconciliationClosesThePhoneAtomicallyAndIgnoresForeignEvidence() throws Exception {
         UUID id = waiting();
         UUID request = UUID.randomUUID();
         phone(id, request, "1234567");
-        jdbc.update(
-                "UPDATE reservation_process SET phase='RECONCILIATION_REQUIRED' WHERE id=?",
-                id.toString());
         var process = repository.find(id).orElseThrow();
-        PROVIDERS.appointmentsOverride.set(
-                exchange -> {
-                    exchange.getResponseHeaders().set("X-Total-Count", "1");
-                    TestIntegrationSupport.respond(
-                            exchange,
-                            200,
-                            "[{\"reservationId\":8251,\"reservationProcessId\":\""
-                                    + process.hold().centralProcessId()
-                                    + "\",\"externalPatientId\":\"user-"
-                                    + owner
-                                    + "\",\"professionalId\":15,\"appointmentDate\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\"}]");
-                });
-        var response = get(id, token);
-        assertThat(body(response).path("verificationStatus").asString()).isEqualTo("VERIFIED");
-        assertThat(body(response).path("state").asString()).isEqualTo("CONFIRMED");
+        var foreign = new com.prog2.appointment.reservation.domain.model.CentralAppointment(
+                process.hold().centralProcessId(), "user-999999", process.selection(), 8251,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED, null);
+        repository.reconcile(id, foreign, ReservationProcessTests.NOW);
+        assertThat(repository.find(id).orElseThrow().phase().isFinal()).isFalse();
+        var own = ListOwnReservationsTests.evidence(process,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED, null);
+        repository.reconcile(id, own, ReservationProcessTests.NOW);
+        assertThat(body(get(id, token)).path("state").asString()).isEqualTo("CONFIRMED");
         assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNotNull();
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
     }
 
     @Test
@@ -691,10 +675,29 @@ class ReservationPhoneIntegrationTests {
     }
 
     @Test
-    void invalidResultStopsPublicationAndCancelledResultCannotBeReopened() throws Exception {
+    void aLatePhoneAcknowledgementCannotUndoAnExplicitCancellation() throws Exception {
         UUID id = waiting();
         UUID request = UUID.randomUUID();
         phone(id, request, "1234567");
+        var process = repository.find(id).orElseThrow();
+        repository.reconcile(id, ListOwnReservationsTests.evidence(process,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED, null),
+                ReservationProcessTests.NOW);
+        var confirmed = repository.find(id).orElseThrow();
+        repository.confirmCancellation(id, new com.prog2.appointment.reservation.domain.model.CancellationEvidence(
+                confirmed.hold().centralProcessId(), confirmed.reservationId(), ReservationProcessTests.NOW),
+                ReservationProcessTests.NOW);
+        repository.phonePublished(request, ReservationProcessTests.NOW.plusSeconds(1));
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNotNull();
+    }
+
+    @Test
+    void invalidResultStopsPublicationAndCancelledResultCannotBeReopened() throws Exception {
+        UUID id = waiting();
+        UUID request = UUID.randomUUID();
+        var accepted = phone(id, request, "1234567");
+        assertThat(accepted.statusCode()).as("Phone acceptance: %s", accepted.body()).isEqualTo(202);
         String key = repository.find(id).orElseThrow().hold().centralProcessId();
         send(key, result(id, "AppointmentProcessInvalid", "invalid-" + id));
         phase(id, ReservationPhase.RECONCILIATION_REQUIRED);
@@ -715,47 +718,28 @@ class ReservationPhoneIntegrationTests {
         UUID id = waiting();
         UUID request = UUID.randomUUID();
         phone(id, request, "1234567");
-        faults.arm(CommitFaultDataSource.Mode.BEFORE, "insert into reservation_inbox", 3);
+        // Mantener la caída hasta comprobar el rollback: el canal ahora se recupera automáticamente.
+        faults.arm(CommitFaultDataSource.Mode.BEFORE, "insert into reservation_processed_event", Integer.MAX_VALUE);
         send(
                 repository.find(id).orElseThrow().hold().centralProcessId(),
                 result(id, "AdditionalInformationRejected", "rejected-" + id));
         await().atMost(Duration.ofSeconds(10))
-                .untilAsserted(
-                        () -> {
-                            assertThat(faults.remaining).hasValue(0);
-                            try (var admin =
-                                    Admin.create(
-                                            Map.of(
-                                                    "bootstrap.servers",
-                                                    KAFKA.getBootstrapServers()))) {
-                                assertThat(
-                                                admin.describeConsumerGroups(
-                                                                List.of(
-                                                                        ReservationTestSupport
-                                                                                .CONSUMER))
-                                                        .all()
-                                                        .get(5, TimeUnit.SECONDS)
-                                                        .get(ReservationTestSupport.CONSUMER)
-                                                        .members())
-                                        .isEmpty();
-                            }
-                        });
+                .untilAsserted(() -> assertThat(faults.remaining.get()).isLessThan(Integer.MAX_VALUE));
         assertThat(committed()).isLessThanOrEqualTo(lastSent);
         phase(id, ReservationPhase.PHONE_QUEUED);
         assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNull();
         assertThat(
                         jdbc.queryForObject(
-                                "SELECT count(*) FROM reservation_inbox WHERE event_id=?",
+                                "SELECT count(*) FROM reservation_processed_event WHERE event_id=?",
                                 Integer.class,
                                 "rejected-" + id))
                 .isZero();
         faults.clear();
-        channel.requestPreparation();
         phase(id, ReservationPhase.WAITING_FOR_PHONE);
         assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNotNull();
         assertThat(
                         jdbc.queryForObject(
-                                "SELECT count(*) FROM reservation_inbox WHERE event_id=?",
+                                "SELECT count(*) FROM reservation_processed_event WHERE event_id=?",
                                 Integer.class,
                                 "rejected-" + id))
                 .isEqualTo(1);
@@ -772,8 +756,9 @@ class ReservationPhoneIntegrationTests {
         jdbc.update(
                 "UPDATE reservation_phone_submission SET cycle_attempt=0, next_attempt_at=?,"
                         + " version=version+1 WHERE id=?",
-                java.sql.Timestamp.from(base),
+                java.time.LocalDateTime.ofInstant(base, ZoneOffset.UTC),
                 request.toString());
+        assertThat(repository.findPhone(request).orElseThrow().nextAttemptAt()).isEqualTo(base);
         // Relojes separados del scheduler controlan exactamente los intentos y el cooldown.
         var first =
                 repository
@@ -892,41 +877,6 @@ class ReservationPhoneIntegrationTests {
     }
 
     @Test
-    void aLegacyDeferredRejectionIsDeduplicatedWithoutReclassifyingHistory() throws Exception {
-        UUID id = waiting();
-        UUID request = UUID.randomUUID();
-        phone(id, request, "1234567");
-        var process = repository.find(id).orElseThrow();
-        String payload = result(id, "AdditionalInformationRejected", "legacy-" + id);
-        var parser = new ReservationActionParser(json, ReservationTestSupport.GROUP);
-        var delivery =
-                parser.parse(
-                        new ReservationDelivery.Origin(
-                                "legacy-actions", 0, 1, process.hold().centralProcessId()),
-                        payload);
-        jdbc.update(
-                "INSERT INTO"
-                    + " reservation_inbox(topic,partition_number,record_offset,message_key,event_id,process_id,fingerprint,payload,outcome,rejection,received_at)"
-                    + " VALUES('legacy-actions',0,1,?,?,?,?,?,'DEFERRED','UNHANDLED_ACTION',CURRENT_TIMESTAMP(6))",
-                process.hold().centralProcessId(),
-                "legacy-" + id,
-                id.toString(),
-                delivery.fingerprint(),
-                payload);
-        send(process.hold().centralProcessId(), payload);
-        await().atMost(Duration.ofSeconds(10))
-                .untilAsserted(() -> assertThat(committed()).isGreaterThan(lastSent));
-        phase(id, ReservationPhase.PHONE_QUEUED);
-        assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNull();
-        assertThat(
-                        jdbc.queryForObject(
-                                "SELECT outcome FROM reservation_inbox WHERE event_id=?",
-                                String.class,
-                                "legacy-" + id))
-                .isEqualTo("DEFERRED");
-    }
-
-    @Test
     void initialRestAcceptanceCannotReplaceTheMissingKafkaRequest() throws Exception {
         UUID id = UUID.randomUUID();
         var response =
@@ -950,45 +900,18 @@ class ReservationPhoneIntegrationTests {
     }
 
     @Test
-    void cancellationDuringTheCentralGetWinsOverItsOlderConfirmation() throws Exception {
+    void anOlderRestConfirmationCannotReopenTheKafkaCancellation() throws Exception {
         UUID id = waiting();
         UUID request = UUID.randomUUID();
         phone(id, request, "1234567");
-        jdbc.update(
-                "UPDATE reservation_process SET phase='RECONCILIATION_REQUIRED' WHERE id=?",
-                id.toString());
         var process = repository.find(id).orElseThrow();
-        var entered = new CountDownLatch(1);
-        var release = new CountDownLatch(1);
-        PROVIDERS.appointmentsOverride.set(
-                exchange -> {
-                    entered.countDown();
-                    awaitGate(release);
-                    exchange.getResponseHeaders().set("X-Total-Count", "1");
-                    TestIntegrationSupport.respond(
-                            exchange,
-                            200,
-                            "[{\"reservationId\":8251,\"reservationProcessId\":\""
-                                    + process.hold().centralProcessId()
-                                    + "\",\"externalPatientId\":\"user-"
-                                    + owner
-                                    + "\",\"professionalId\":15,\"appointmentDate\":\"2026-11-02\",\"startTime\":\"09:00\",\"status\":\"CONFIRMED\"}]");
-                });
-        try (var pool = Executors.newSingleThreadExecutor()) {
-            var pending = pool.submit(() -> get(id, token));
-            try {
-                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-                send(
-                        process.hold().centralProcessId(),
-                        result(id, "AppointmentCancelled", "cancelled-" + id));
-                phase(id, ReservationPhase.CANCELLED);
-            } finally {
-                release.countDown();
-            }
-            var response = pending.get(5, TimeUnit.SECONDS);
-            assertThat(body(response).path("state").asString()).isEqualTo("CANCELLED");
-            assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNotNull();
-        }
+        var older = ListOwnReservationsTests.evidence(process,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED, null);
+        send(process.hold().centralProcessId(), result(id, "AppointmentCancelled", "cancelled-" + id));
+        phase(id, ReservationPhase.CANCELLED);
+        repository.reconcile(id, older, ReservationProcessTests.NOW);
+        assertThat(body(get(id, token)).path("state").asString()).isEqualTo("CANCELLED");
+        assertThat(repository.findPhone(request).orElseThrow().closedAt()).isNotNull();
     }
 
     @Test

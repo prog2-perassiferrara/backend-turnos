@@ -57,7 +57,7 @@ class ReservationProcessTests {
         var process = creating();
         assertThat(process.ownerId()).isEqualTo(42);
         assertThat(process.patient().externalPatientId()).isEqualTo("user-42");
-        assertThat(process.phase()).isEqualTo(ReservationPhase.CREATING_HOLD);
+        assertThat(process.phase()).isEqualTo(ReservationPhase.HOLD_PENDING);
         assertThat(process.isPending()).isTrue();
         assertThat(process.hold()).isNull();
         assertThat(process.toString()).doesNotContain("Paciente", "Ficticio");
@@ -133,7 +133,7 @@ class ReservationProcessTests {
                                 new ReservationGatewayException(
                                         ReservationFailure.HOLD_CREATION_UNCERTAIN, true, false),
                                 NOW);
-        assertThat(process.phase()).isEqualTo(ReservationPhase.HOLD_UNCERTAIN);
+        assertThat(process.phase()).isEqualTo(ReservationPhase.HOLD_PENDING);
         assertThat(process.isPending()).isTrue();
         assertThat(process.hold()).isNull();
     }
@@ -146,15 +146,13 @@ class ReservationProcessTests {
                                 new ReservationGatewayException(
                                         ReservationFailure.HOLD_CREATION_UNCERTAIN, true, false),
                                 NOW);
-        assertThat(uncertain.prepareHoldRetry().phase()).isEqualTo(ReservationPhase.CREATING_HOLD);
         var abandoned = uncertain.abandonHoldAttempt("HOLD_CREATION_UNCERTAIN", NOW);
-        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.FAILED);
         assertThat(abandoned.closedAt()).isEqualTo(NOW);
         assertThat(abandoned.hold()).isNull();
         assertThat(abandoned.isPending()).isFalse();
-        assertThat(abandoned.prepareHoldRetry()).isSameAs(abandoned);
         assertThat(confirming().abandonHoldAttempt("UNKNOWN", NOW).phase())
-                .isEqualTo(ReservationPhase.CONFIRMING);
+                .isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
         assertThat(
                         abandoned.apply(
                                 action(ReservationActionType.PHONE_REQUESTED, "late-request"), NOW))
@@ -169,7 +167,7 @@ class ReservationProcessTests {
                                 new ReservationGatewayException(
                                         ReservationFailure.SLOT_NOT_AVAILABLE, true, true),
                                 NOW);
-        assertThat(rejected.phase()).isEqualTo(ReservationPhase.REJECTED);
+        assertThat(rejected.phase()).isEqualTo(ReservationPhase.FAILED);
         assertThat(rejected.isPending()).isFalse();
         var held =
                 confirming()
@@ -234,36 +232,13 @@ class ReservationProcessTests {
     }
 
     @Test
-    void confirmedWithPendingAbandonmentRemainsExclusiveUntilCancellation() {
-        var phone =
-                confirming().apply(action(ReservationActionType.PHONE_REQUESTED, "request-1"), NOW);
-        var abandoning =
-                new ReservationProcess(
-                        phone.id(),
-                        phone.patient(),
-                        phone.selection(),
-                        phone.phase(),
-                        phone.hold(),
-                        phone.requestEventId(),
-                        null,
-                        null,
-                        phone.version(),
-                        phone.writeId(),
-                        null,
-                        true,
-                        null,
-                        null);
-        var confirmed =
-                abandoning.apply(action(ReservationActionType.CONFIRMED, "confirmed-1"), NOW);
+    void confirmationBecomesHistoricalAndOnlyAnExplicitCancellationClosesIt() {
+        var confirmed = confirming().apply(action(ReservationActionType.CONFIRMED, "confirmed"), NOW);
         assertThat(confirmed.phase()).isEqualTo(ReservationPhase.CONFIRMED);
-        assertThat(confirmed.isPending()).isTrue();
-        var cancelled =
-                confirmed.apply(
-                        action(ReservationActionType.CANCELLED, "cancelled-1"), NOW.plusSeconds(1));
+        assertThat(confirmed.isPending()).isFalse();
+        var cancelled = confirmed.apply(action(ReservationActionType.CANCELLED, "cancelled"), NOW);
         assertThat(cancelled.phase()).isEqualTo(ReservationPhase.CANCELLED);
-        assertThat(cancelled.isPending()).isFalse();
-        assertThat(cancelled.apply(action(ReservationActionType.CONFIRMED, "confirmed-late"), NOW))
-                .isSameAs(cancelled);
+        assertThat(cancelled.apply(action(ReservationActionType.CONFIRMED, "late"), NOW)).isSameAs(cancelled);
     }
 
     @ParameterizedTest
@@ -285,4 +260,12 @@ class ReservationProcessTests {
                                 NOW))
                 .isSameAs(process);
     }
+    @Test
+    void anInconsistentKafkaActionCannotBeClearedByALateInitialRestAcceptance() {
+        var pending = confirming();
+        var inconsistent = pending.apply(action(ReservationActionType.INVALID, "invalid"), NOW);
+        assertThat(inconsistent.phase()).isEqualTo(ReservationPhase.RECONCILIATION_REQUIRED);
+        assertThat(inconsistent.acceptInitialConfirmation(HOLD)).isSameAs(inconsistent);
+    }
+
 }

@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import com.prog2.appointment.reservation.domain.enums.ReservationActionType;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
+import com.prog2.appointment.reservation.domain.model.ReservationAction;
+import java.util.Optional;
 import com.prog2.appointment.reservation.infrastructure.messaging.ReservationActionParser;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -15,8 +16,6 @@ class ReservationActionParserTests {
     private final JsonMapper json = JsonMapper.builder().findAndAddModules().build();
     private final ReservationActionParser parser =
             new ReservationActionParser(json, ReservationTestSupport.GROUP);
-    private final ReservationDelivery.Origin origin =
-            new ReservationDelivery.Origin("actions", 0, 3, "process-1");
 
     private ObjectNode event() {
         return (ObjectNode)
@@ -28,8 +27,8 @@ class ReservationActionParserTests {
                         """);
     }
 
-    private ReservationDelivery parse(ObjectNode node) {
-        return parser.parse(origin, json.writeValueAsString(node));
+    private Optional<ReservationAction> parse(ObjectNode node) {
+        return parser.parse("process-1", json.writeValueAsString(node));
     }
 
     @Test
@@ -38,10 +37,9 @@ class ReservationActionParserTests {
         var first = parse(source);
         source.putObject("futureField").put("anything", true);
         var repeat = parse(source);
-        assertThat(first.action().type()).isEqualTo(ReservationActionType.PHONE_REQUESTED);
-        assertThat(first.action().correlation().eventId()).isEqualTo("event-1");
-        assertThat(repeat.fingerprint()).isEqualTo(first.fingerprint());
-        assertThat(repeat.rejection()).isNull();
+        assertThat(first.orElseThrow().type()).isEqualTo(ReservationActionType.PHONE_REQUESTED);
+        assertThat(first.orElseThrow().correlation().eventId()).isEqualTo("event-1");
+        assertThat(repeat).isEqualTo(first);
     }
 
     @ParameterizedTest
@@ -55,13 +53,11 @@ class ReservationActionParserTests {
                 "occurredAt",
                 "schemaVersion"
             })
-    void missingRequiredDataBecomesADurableRejection(String field) {
+    void missingRequiredDataIsRejectedWithoutAnAction(String field) {
         var source = event();
         source.remove(field);
         var delivery = parse(source);
-        assertThat(delivery.action()).isNull();
-        assertThat(delivery.rejection()).isEqualTo("INVALID_ACTION");
-        assertThat(delivery.payload()).contains("eventType");
+        assertThat(delivery).isEmpty();
     }
 
     @ParameterizedTest
@@ -73,19 +69,14 @@ class ReservationActionParserTests {
         } else {
             source.put(field, "other");
         }
-        assertThat(parse(source).rejection()).isEqualTo("INVALID_ACTION");
+        assertThat(parse(source)).isEmpty();
     }
 
     @Test
-    void unknownTypesAreRetainedAndDifferentFactsCannotAliasTheSameEventId() {
+    void unknownTypesRemainUnsupportedActionsWithoutPayloadAuditing() {
         var source = event();
         source.put("eventType", "FutureAction");
-        var first = parse(source);
-        assertThat(first.action().type()).isEqualTo(ReservationActionType.OTHER);
-        source.put("eventType", "AnotherFutureAction");
-        assertThat(parse(source).fingerprint()).isNotEqualTo(first.fingerprint());
-        source.put("eventType", "FutureAction").put("occurredAt", "2026-11-02T11:00:02Z");
-        assertThat(parse(source).fingerprint()).isNotEqualTo(first.fingerprint());
+        assertThat(parse(source).orElseThrow().type()).isEqualTo(ReservationActionType.OTHER);
     }
 
     @Test
@@ -100,38 +91,32 @@ class ReservationActionParserTests {
                 .put("startTime", "09:00")
                 .put("status", "CONFIRMED");
         var first = parse(source);
-        assertThat(first.action().reservationId()).isEqualTo(17);
+        assertThat(first.orElseThrow().reservationId()).isEqualTo(17);
         source.put("startTime", "09:00:00");
-        assertThat(parse(source).fingerprint()).isEqualTo(first.fingerprint());
+        assertThat(parse(source)).isEqualTo(first);
         source.remove("requestEventId");
-        assertThat(parse(source).action()).isNull();
+        assertThat(parse(source)).isEmpty();
     }
 
     @Test
-    void malformedAndOversizedBodiesAreRetainedWithBoundedPayload() {
-        assertThat(parser.parse(origin, null).rejection()).isEqualTo("INVALID_ACTION");
-        assertThat(parser.parse(origin, "{bad-json").action()).isNull();
-        var oversized = parser.parse(origin, "x".repeat(1_048_577));
-        assertThat(oversized.rejection()).isEqualTo("PAYLOAD_TOO_LARGE");
-        assertThat(oversized.payload()).hasSize(65536);
-        assertThat(oversized.toString()).doesNotContain("x".repeat(20));
+    void malformedAndOversizedBodiesDoNotBecomeActions() {
+        assertThat(parser.parse("process-1", null)).isEmpty();
+        assertThat(parser.parse("process-1", "{bad-json")).isEmpty();
+        assertThat(parser.parse("process-1", "x".repeat(1_048_577))).isEmpty();
     }
 
     @Test
-    void rejectionRequiresItsCorrelationAndKeepsTheFingerprintUsedByV3() {
+    void rejectionRequiresItsCorrelationAndAllowsCompatibleFields() {
         var source = event();
         source.put("eventType", "AdditionalInformationRejected")
                 .put("groupId", ReservationTestSupport.GROUP)
                 .put("requestEventId", "request-1")
                 .put("reason", "INVALID_PHONE_NUMBER");
         var rejected = parse(source);
-        assertThat(rejected.action().type()).isEqualTo(ReservationActionType.PHONE_REJECTED);
-        // Calculado ejecutando el parser anterior sobre el mismo evento v1.
-        assertThat(rejected.fingerprint())
-                .isEqualTo("3b931c132c98ffecf6f91bc3bbbb371d4ecd6e4d74abfdb02b64a3992407267e");
+        assertThat(rejected.orElseThrow().type()).isEqualTo(ReservationActionType.PHONE_REJECTED);
         source.putObject("newCompatibleField").put("value", true);
-        assertThat(parse(source).fingerprint()).isEqualTo(rejected.fingerprint());
+        assertThat(parse(source)).isEqualTo(rejected);
         source.remove("groupId");
-        assertThat(parse(source).action()).isNull();
+        assertThat(parse(source)).isEmpty();
     }
 }

@@ -3,7 +3,7 @@ package com.prog2.appointment.reservation.application.usecases;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
-import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
+import com.prog2.appointment.reservation.application.service.ReservationExecutionGuard;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
@@ -106,7 +106,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         try (var _ = acquired.orElseThrow()) {
             // Otro ejecutor pudo avanzar entre insertar la intención y obtener este scope.
             var process = current(id);
-            if (!creating && (process.phase() != ReservationPhase.HELD || process.abandonmentPending()))
+            if (!creating && (process.phase() != ReservationPhase.HELD))
                 return process;
             if (process.phase() == ReservationPhase.HELD
                     && !clock.instant().isBefore(process.hold().expiresAt()))
@@ -129,7 +129,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
 
     private ReservationProcess execute(ReservationProcess process) {
         try {
-            if (process.phase() == ReservationPhase.CREATING_HOLD && !isFuture(process.selection())) {
+            if (process.phase() == ReservationPhase.HOLD_PENDING && !isFuture(process.selection())) {
                 throw new ReservationGatewayException(
                         ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
             }
@@ -170,7 +170,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
 
     private ReservationProcess createHold(ReservationProcess process) {
         for (int attempt = 1; attempt <= holdAttempts; attempt++) {
-            if (process.phase() != ReservationPhase.CREATING_HOLD) {
+            if (process.phase() != ReservationPhase.HOLD_PENDING) {
                 return process;
             }
             requireFutureCreation(process, attempt);
@@ -227,7 +227,7 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         } catch (ReservationGatewayException unavailable) {
             throw abandon(process, unavailable.failure(), null);
         }
-        return repository.update(process.id(), ReservationProcess::prepareHoldRetry);
+        return process;
     }
 
     private ReservationOperationException abandon(

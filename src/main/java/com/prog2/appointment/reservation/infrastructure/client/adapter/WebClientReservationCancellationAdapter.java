@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
@@ -15,17 +16,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 /** Adapter del POST idempotente; la reconciliación y los reintentos pertenecen a aplicación. */
+@RequiredArgsConstructor
 public final class WebClientReservationCancellationAdapter implements ReservationCancellationGateway {
     private final WebClient client;
     private final TechnicalAccessUseCase access;
     private final Duration timeout;
-
-    public WebClientReservationCancellationAdapter(WebClient client, TechnicalAccessUseCase access,
-            Duration timeout) {
-        this.client = client;
-        this.access = access;
-        this.timeout = timeout;
-    }
 
     @Override
     public CancellationEvidence cancel(ReservationProcess process) {

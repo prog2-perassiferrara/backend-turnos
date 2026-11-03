@@ -1,6 +1,5 @@
 package com.prog2.appointment.reservation.domain.ports.out;
 
-import com.prog2.appointment.reservation.domain.model.CentralAppointmentsBatch;
 
 import com.prog2.appointment.reservation.domain.model.CentralAppointment;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
@@ -18,9 +17,4 @@ public interface CentralAppointmentGateway {
      */
     Optional<CentralAppointment> find(ReservationProcess process);
 
-    /**
-     * @param ownerId identidad propia desde la que se deriva el paciente estable
-     * @return evidencia validada y alcance; un recorrido parcial no prueba ausencia
-     */
-    CentralAppointmentsBatch listOwn(long ownerId);
 }

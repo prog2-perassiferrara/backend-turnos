@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.application.usecases;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
@@ -10,43 +11,30 @@ import com.prog2.appointment.reservation.domain.model.ReservationRecoveryPolicy;
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
 import com.prog2.appointment.reservation.domain.ports.in.StartReservationUseCase;
 import com.prog2.appointment.reservation.domain.ports.out.CentralAppointmentGateway;
-import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
+import com.prog2.appointment.reservation.application.service.ReservationExecutionGuard;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository;
+import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Reutiliza los avances autorizados; cada revisión y cada lote tienen presupuesto propio. */
+/** Reutiliza los avances autorizados; cada lote es acotado y cada revisión conserva su próxima fecha. */
+@RequiredArgsConstructor
 public final class RecoverReservationProcessesUseCaseImpl implements RecoverReservationProcessesUseCase {
     private static final System.Logger LOG = System.getLogger(RecoverReservationProcessesUseCaseImpl.class.getName());
     private final ReservationProcessRepository repository;
     private final CentralAppointmentGateway central;
     private final StartReservationUseCase start;
     private final ReservationExecutionGuard guard;
+    private final RecoverReservationCancellationsUseCase cancellations;
     private final Clock clock;
     private final ReservationRecoveryPolicy policy;
-
-    public RecoverReservationProcessesUseCaseImpl(ReservationProcessRepository repository,
-            CentralAppointmentGateway central, StartReservationUseCase start, ReservationExecutionGuard guard,
-            Clock clock, ReservationRecoveryPolicy policy) {
-        this.repository = repository;
-        this.central = central;
-        this.start = start;
-        this.guard = guard;
-        this.clock = clock;
-        this.policy = policy;
-    }
 
     @Override
     // Cada excepción expone failure() en su propio tipo; un multicatch pierde ese contrato.
     @SuppressWarnings("java:S2147")
     public void recoverDue() {
-        try {
-            repository.replayDeferredKnown(10);
-        } catch (ReservationStorageException _) {
-            LOG.log(System.Logger.Level.WARNING, "Deferred reservation recovery unavailable");
-        }
-        for (var id : repository.dueRecovery(clock.instant(), policy.cooldown(), 10)) {
+        for (var id : repository.dueRecovery(clock.instant(), policy.initialDelay(), 10)) {
             if (Thread.currentThread().isInterrupted()) return;
             try {
                 recover(id);
@@ -65,6 +53,10 @@ public final class RecoverReservationProcessesUseCaseImpl implements RecoverRese
     }
 
     private void recover(UUID id) {
+        if (repository.find(id).orElseThrow(ReservationStorageException::new).cancellation() != null) {
+            cancellations.recover(id);
+            return;
+        }
         var acquired = guard.tryAcquire(id);
         if (acquired.isEmpty()) {
             repository.deferRecovery(id, clock.instant().plus(policy.retryDelay()));
@@ -74,16 +66,19 @@ public final class RecoverReservationProcessesUseCaseImpl implements RecoverRese
         try (var _ = acquired.orElseThrow()) {
             var now = clock.instant();
             var claimed = repository.beginRecovery(
-                    id, now, policy.attempts(), policy.retryDelay(), policy.cooldown());
+                    id, now, policy.retryDelay(), policy.initialDelay());
             if (claimed.isEmpty()) return;
             var process = claimed.orElseThrow();
-            if (process.hold() == null) {
+            if (process.cancellation() != null) {
+                // Una intención recién llegada se delegará en el siguiente ciclo, fuera de este guard.
+                return;
+            } else if (process.hold() == null) {
                 repository.update(id, value -> value.abandonHoldAttempt(
                         ReservationFailure.HOLD_CREATION_UNCERTAIN.name(), now));
             } else if (process.phase() == ReservationPhase.HELD) {
                 if (!now.isBefore(process.hold().expiresAt()))
                     repository.update(id, value -> value.expireUnconfirmedHold(now));
-                else resume = !process.abandonmentPending();
+                else resume = true;
             } else if (shouldVerify(process, now)) {
                 central.find(process).filter(value -> value.belongsTo(process))
                         .ifPresent(value -> repository.reconcile(id, value, clock.instant()));

@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.messaging;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,6 @@ import com.prog2.appointment.infrastructure.config.ReservationProperties;
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
 import com.prog2.appointment.reservation.domain.ports.in.ReceiveReservationActionUseCase;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationMessagingReadiness;
 
@@ -28,7 +28,9 @@ import com.prog2.appointment.reservation.domain.ports.out.ReservationMessagingRe
  * de MySQL. El silencio del topic no se utiliza como criterio de fallo ni como confirmación
  * funcional.
  */
+@RequiredArgsConstructor
 public final class ReservationKafkaChannel implements ReservationMessagingReadiness, AutoCloseable {
+    private static final System.Logger LOG = System.getLogger(ReservationKafkaChannel.class.getName());
     private final TechnicalAccessUseCase access;
     private final ReceiveReservationActionUseCase receive;
     private final ReservationActionParser parser;
@@ -42,19 +44,6 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
     private boolean preparing;
     private boolean closed;
     private long nextPreparation = System.nanoTime();
-
-    public ReservationKafkaChannel(
-            TechnicalAccessUseCase access,
-            ReceiveReservationActionUseCase receive,
-            ReservationActionParser parser,
-            ReservationProperties properties,
-            ExecutorService executor) {
-        this.access = access;
-        this.receive = receive;
-        this.parser = parser;
-        this.properties = properties;
-        this.executor = executor;
-    }
 
     @Override
     public synchronized void requestPreparation() {
@@ -155,13 +144,12 @@ public final class ReservationKafkaChannel implements ReservationMessagingReadin
         options.setMessageListener(
                 (AcknowledgingMessageListener<String, String>)
                         (message, ack) -> {
-                            var origin =
-                                    new ReservationDelivery.Origin(
-                                            message.topic(),
-                                            message.partition(),
-                                            message.offset(),
-                                            message.key());
-                            receive.receive(parser.parse(origin, message.value()));
+                            var action = parser.parse(message.key(), message.value());
+                            if (action.isPresent()) {
+                                receive.receive(action.get());
+                            } else {
+                                LOG.log(System.Logger.Level.WARNING, "Invalid reservation action ignored");
+                            }
                             ack.acknowledge();
                         });
         var next = new KafkaMessageListenerContainer<>(factory, options);

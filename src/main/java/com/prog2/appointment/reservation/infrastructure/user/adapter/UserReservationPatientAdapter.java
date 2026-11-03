@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.user.adapter;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.ReservationPatient;
@@ -11,12 +13,10 @@ import com.prog2.appointment.user.domain.ports.in.GetUserProfileUseCase;
  * Adapter aprobado: consume solo la lectura pública de user y devuelve un modelo propio sin
  * secretos.
  */
+@Component
+@RequiredArgsConstructor
 public final class UserReservationPatientAdapter implements ReservationPatientGateway {
     private final GetUserProfileUseCase profiles;
-
-    public UserReservationPatientAdapter(GetUserProfileUseCase profiles) {
-        this.profiles = profiles;
-    }
 
     @Override
     public ReservationPatient get(long ownerId) {

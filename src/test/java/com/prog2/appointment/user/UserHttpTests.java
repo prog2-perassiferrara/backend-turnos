@@ -595,9 +595,10 @@ class UserHttpTests {
         }
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(ints = {200, 503, 401})
     @Timeout(45)
-    void recreatedContextRetainsAccountAndCanAuthenticate() throws IOException, InterruptedException, ParseException {
+    void recreatedContextRetainsAccountAndCanAuthenticate(int technicalStatus) throws IOException, InterruptedException, ParseException {
         assertThat(register(profile("patient", "patient@example.test")).statusCode())
                 .isEqualTo(201);
         Long id = jdbc.queryForObject("SELECT id FROM app_user", Long.class);
@@ -617,12 +618,19 @@ class UserHttpTests {
                 settings.entrySet().stream()
                         .map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
                         .toArray(String[]::new);
+        INTEGRATION.catalogStatus.set(technicalStatus);
         try (var restarted = application.run(arguments)) {
+            var access = restarted.getBean(TechnicalAccessUseCase.class);
+            if (technicalStatus == 200) assertThat(access.getAccess()).isNotNull();
+            else assertThatThrownBy(access::getAccess).isInstanceOf(
+                    com.prog2.appointment.integration.application.exception.TechnicalAccessUnavailableException.class);
             var token =
                     restarted
                             .getBean(AuthenticateUserUseCase.class)
                             .authenticate("PATIENT", PASSWORD, false);
             assertThat(SignedJWT.parse(token.value()).getJWTClaimsSet().getSubject()).isEqualTo(id.toString());
+        } finally {
+            INTEGRATION.catalogStatus.set(200);
         }
         assertThat(count("app_user")).isEqualTo(1);
     }

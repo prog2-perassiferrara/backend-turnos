@@ -24,7 +24,6 @@ import com.prog2.appointment.availability.infrastructure.client.adapter.WebClien
 import com.prog2.appointment.availability.infrastructure.config.AvailabilityConfiguration;
 import com.prog2.appointment.infrastructure.security.jwt.ServiceTokenIssuer;
 import com.prog2.appointment.integration.TestIntegrationSupport;
-import com.prog2.appointment.integration.domain.enums.ProvisioningStatus;
 import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
 import com.prog2.appointment.integration.domain.model.TechnicalAccess;
 import com.prog2.appointment.integration.domain.model.TechnicalToken;
@@ -261,7 +260,6 @@ class AvailabilityClientTests {
 
     private static TechnicalAccess session(String token) {
         return new TechnicalAccess(new TechnicalToken(token, AvailabilityTestSupport.NOW.plusSeconds(3600)),
-                new IntegrationConfiguration(TestIntegrationSupport.GROUP, ProvisioningStatus.PROVISIONED,
-                        "fictional-broker:9092", "fictional-group", "fictional-actions", "fictional-phone"));
+                new IntegrationConfiguration(TestIntegrationSupport.GROUP, "fictional-broker:9092", "fictional-group", "fictional-actions", "fictional-phone"));
     }
 }

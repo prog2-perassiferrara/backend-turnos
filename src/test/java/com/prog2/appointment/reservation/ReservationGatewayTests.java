@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.prog2.appointment.infrastructure.config.ReservationProperties;
-import com.prog2.appointment.integration.domain.enums.ProvisioningStatus;
 import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
 import com.prog2.appointment.integration.domain.model.TechnicalAccess;
 import com.prog2.appointment.integration.domain.model.TechnicalToken;
@@ -57,7 +56,6 @@ class ReservationGatewayTests {
                                 new TechnicalToken(providers.token, null),
                                 new IntegrationConfiguration(
                                         ReservationTestSupport.GROUP,
-                                        ProvisioningStatus.PROVISIONED,
                                         "fictional:9092",
                                         "fictional-consumer",
                                         "fictional-actions",

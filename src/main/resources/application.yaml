@@ -2,7 +2,7 @@ spring:
   task:
     scheduling:
       pool:
-        size: 3
+        size: 2
   application:
     name: appointment
   datasource:

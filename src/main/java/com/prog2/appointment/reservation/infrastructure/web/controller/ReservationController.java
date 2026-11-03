@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.web.controller;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.ports.in.ListOwnReservationsUseCase;
 import com.prog2.appointment.reservation.infrastructure.web.dto.OwnReservationsResponse;
@@ -7,10 +8,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.UUID;
 import com.prog2.appointment.reservation.domain.ports.in.CancelReservationUseCase;
-import com.prog2.appointment.reservation.domain.ports.in.AbandonReservationUseCase;
 import com.prog2.appointment.reservation.domain.model.ReservationStatus;
 import com.prog2.appointment.reservation.domain.enums.CancellationState;
-import com.prog2.appointment.reservation.infrastructure.web.dto.CancellationRequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import com.prog2.appointment.reservation.domain.ports.in.SubmitReservationPhoneUseCase;
@@ -34,6 +33,7 @@ import jakarta.validation.Valid;
 
 /** Adaptador entrante; los filtros existentes validan usuario/ROLE_USER antes del caso de uso. */
 @RestController
+@RequiredArgsConstructor
 public final class ReservationController {
     private final StartReservationUseCase start;
     private final ReservationDtoMapper mapper;
@@ -41,24 +41,6 @@ public final class ReservationController {
     private final GetReservationProcessUseCase get;
     private final ListOwnReservationsUseCase list;
     private final CancelReservationUseCase cancel;
-    private final AbandonReservationUseCase abandon;
-
-    public ReservationController(
-            StartReservationUseCase start,
-            ReservationDtoMapper mapper,
-            SubmitReservationPhoneUseCase submit,
-            GetReservationProcessUseCase get,
-            ListOwnReservationsUseCase list,
-            CancelReservationUseCase cancel,
-            AbandonReservationUseCase abandon) {
-        this.start = start;
-        this.mapper = mapper;
-        this.submit = submit;
-        this.get = get;
-        this.list = list;
-        this.cancel = cancel;
-        this.abandon = abandon;
-    }
 
     /**
      * @return pendiente e historial propios; el propietario procede exclusivamente del JWT
@@ -137,22 +119,13 @@ public final class ReservationController {
     /** @return estado conocido e intención propia; 202 no acredita liberación central */
     @PostMapping(path = "/api/reservation-processes/{processId}/cancel", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ReservationProcessResponse> cancel(@AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID processId, @Valid @RequestBody(required = false) CancellationRequestBody body) {
-        return cancellationResponse(cancel.cancel(Long.parseLong(jwt.getSubject()), processId,
-                body == null ? null : body.retryVersion()));
-    }
-
-    /** @return abandono explícito conservado, también si se confirmó concurrentemente */
-    @PostMapping(path = "/api/reservation-processes/{processId}/abandon", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ReservationProcessResponse> abandon(@AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID processId, @Valid @RequestBody(required = false) CancellationRequestBody body) {
-        return cancellationResponse(abandon.abandon(Long.parseLong(jwt.getSubject()), processId,
-                body == null ? null : body.retryVersion()));
+            @PathVariable UUID processId) {
+        return cancellationResponse(cancel.cancel(Long.parseLong(jwt.getSubject()), processId));
     }
 
     private ResponseEntity<ReservationProcessResponse> cancellationResponse(ReservationStatus status) {
         var progress = status.process().cancellation();
-        boolean pending = progress != null && progress.state() == CancellationState.PENDING;
+        boolean pending = progress != null && progress == CancellationState.PENDING;
         return ResponseEntity.status(pending ? HttpStatus.ACCEPTED : HttpStatus.OK)
                 .cacheControl(CacheControl.noStore()).body(mapper.toResponse(status));
     }

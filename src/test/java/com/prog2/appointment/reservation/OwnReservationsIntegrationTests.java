@@ -240,7 +240,8 @@ class OwnReservationsIntegrationTests {
     @Test
     void namesArePersistedWithoutCatalogAndSurviveLaterProviderFailures() throws Exception {
         var process = seed(LocalDate.of(2026, 11, 2), false, true);
-        central(process, "CONFIRMED", "Ana", "Gomez");
+        repository.reconcile(process.id(), ListOwnReservationsTests.evidence(process,
+                CentralAppointmentState.CONFIRMED, new ProfessionalName("Ana", "Gomez")), ReservationProcessTests.NOW);
         var body = json.readTree(get("", token).body());
         assertThat(
                         body.path("history")
@@ -267,9 +268,9 @@ class OwnReservationsIntegrationTests {
                                 .path("professionalFirstName")
                                 .asString())
                 .isEqualTo("Ana");
-        assertThat(fallback.path("warningCode").asString())
-                .isEqualTo("APPOINTMENT_STATUS_UNAVAILABLE");
-        assertThat(fallback.path("verifiedAt").isNull()).isTrue();
+        assertThat(fallback.has("verificationStatus")).isFalse();
+        assertThat(fallback.has("verifiedAt")).isFalse();
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
         assertThat(fallback.path("history").path("content").get(0).has("endTime")).isFalse();
         assertThat(PROVIDERS.creates).hasValue(0);
         assertThat(PROVIDERS.confirmations).hasValue(0);
@@ -348,13 +349,13 @@ class OwnReservationsIntegrationTests {
     }
 
     @Test
-    void anEmptyFallbackStillWarnsAndMissingLocalStorageReturns503() throws Exception {
+    void localReadsWorkWithoutCentralAndMissingLocalStorageReturns503() throws Exception {
         PROVIDERS.appointmentsOverride.set(
                 exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
         var fallback = get("", token);
         assertThat(fallback.statusCode()).isEqualTo(200);
-        assertThat(json.readTree(fallback.body()).path("warningCode").asString())
-                .isEqualTo("APPOINTMENT_STATUS_UNAVAILABLE");
+        assertThat(json.readTree(fallback.body()).has("verificationStatus")).isFalse();
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
         jdbc.execute("RENAME TABLE reservation_process TO unavailable_reservation_process");
         try {
             var failed = get("", token);
@@ -427,7 +428,7 @@ class OwnReservationsIntegrationTests {
             statement.executeUpdate(
                     "INSERT INTO"
                         + " reservation_process(id,owner_id,professional_id,appointment_date,start_time,patient_first_name,patient_last_name,phase,version,write_id,created_at,updated_at)"
-                        + " VALUES('00000000-0000-0000-0000-000000000042',42,15,'2026-11-02','09:00','Paciente','Ficticio','CREATING_HOLD',0,'00000000-0000-0000-0000-000000000043',CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6))");
+                        + " VALUES('00000000-0000-0000-0000-000000000042',42,15,'2026-11-02','09:00','Paciente','Ficticio','HOLD_PENDING',0,'00000000-0000-0000-0000-000000000043',CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6))");
             Flyway.configure()
                     .dataSource(
                             database.getJdbcUrl(), database.getUsername(), database.getPassword())
@@ -439,7 +440,7 @@ class OwnReservationsIntegrationTests {
                                 + " phase,professional_first_name,professional_last_name,active_owner_id"
                                 + " FROM reservation_process")) {
                 assertThat(result.next()).isTrue();
-                assertThat(result.getString(1)).isEqualTo("CREATING_HOLD");
+                assertThat(result.getString(1)).isEqualTo("HOLD_PENDING");
                 assertThat(result.getString(2)).isNull();
                 assertThat(result.getString(3)).isNull();
                 assertThat(result.getLong(4)).isEqualTo(42);
@@ -465,25 +466,15 @@ class OwnReservationsIntegrationTests {
     }
 
     @Test
-    void aCancellationCommittedWhileRestIsInFlightIsNotReopened() throws Exception {
+    void localHistoryKeepsACancellationEvenIfCentralWouldReturnOlderConfirmation() throws Exception {
         var process = seed(LocalDate.of(2026, 11, 2), false, true);
         central(process, "CONFIRMED", "Ana", "Gomez");
-        var response = PROVIDERS.appointmentsOverride.get();
-        PROVIDERS.appointmentsOverride.set(exchange -> {
-            repository.reconcile(
-                    process.id(),
-                    ListOwnReservationsTests.evidence(
-                            process, CentralAppointmentState.CANCELLED, null),
-                    ReservationProcessTests.NOW);
-            response.handle(exchange);
-        });
+        repository.reconcile(process.id(), ListOwnReservationsTests.evidence(
+                process, CentralAppointmentState.CANCELLED, null), ReservationProcessTests.NOW);
         var body = json.readTree(get("", token).body());
         assertThat(body.path("pending").isNull()).isTrue();
-        assertThat(body.path("history").path("content").get(0).path("state").asString())
-                .isEqualTo("CANCELLED");
-        assertThat(body.path("verificationStatus").asString()).isEqualTo("INCONCLUSIVE");
-        assertThat(repository.find(process.id()).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(body.path("history").path("content").get(0).path("state").asString()).isEqualTo("CANCELLED");
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
     }
 
     @Test

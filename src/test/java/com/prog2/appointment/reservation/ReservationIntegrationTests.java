@@ -356,7 +356,7 @@ class ReservationIntegrationTests {
         assertThat(body(response).path("recheckAt").asString())
                 .isEqualTo(ReservationProcessTests.HOLD.expiresAt().toString());
         var abandoned = repository.find(id).orElseThrow();
-        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(abandoned.phase()).isEqualTo(ReservationPhase.FAILED);
         assertThat(abandoned.hold()).isNull();
         assertThat(repository.findPending(owner)).isEmpty();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
@@ -401,7 +401,7 @@ class ReservationIntegrationTests {
         assertThat(PROVIDERS.creates).hasValue(3);
         assertThat(PROVIDERS.confirmations).hasValue(0);
         assertThat(repository.find(id).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+                .isEqualTo(ReservationPhase.FAILED);
         assertThat(repository.findPending(owner)).isEmpty();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
         assertThat(PROVIDERS.creates).hasValue(3);
@@ -420,7 +420,7 @@ class ReservationIntegrationTests {
         assertThat(start(id, "09:00").statusCode()).isEqualTo(409);
         assertThat(PROVIDERS.creates).hasValue(2);
         assertThat(repository.find(id).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+                .isEqualTo(ReservationPhase.FAILED);
     }
 
     @Test
@@ -484,12 +484,15 @@ class ReservationIntegrationTests {
     }
 
     @Test
-    void aLostCommitResponseUsesTheWriteReceiptBeforeCreatingExactlyOneHold() throws Exception {
+    void aLostCommitResponseCannotAuthorizeCreatingAHold() throws Exception {
         faults.arm(CommitFaultDataSource.Mode.AFTER, "insert into reservation_process", 1);
         UUID id = UUID.randomUUID();
-        assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(503);
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.HOLD_PENDING);
+        assertThat(PROVIDERS.creates).hasValue(0);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
         assertThat(start(id, "09:00").statusCode()).isEqualTo(200);
-        assertThat(PROVIDERS.creates).hasValue(1);
+        assertThat(PROVIDERS.creates).hasValue(0);
     }
 
     @Test
@@ -498,6 +501,10 @@ class ReservationIntegrationTests {
         String event = "request-" + UUID.randomUUID();
         PROVIDERS.beforeConfirm.set(
                 hold -> {
+                    var checkpoint = repository.find(id).orElseThrow();
+                    assertThat(checkpoint.hold().centralProcessId()).isEqualTo(hold.process());
+                    assertThat(checkpoint.hold().holdId()).isEqualTo(hold.id());
+                    assertThat(checkpoint.phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
                     send(
                             hold.process(),
                             ReservationTestSupport.event(
@@ -508,7 +515,7 @@ class ReservationIntegrationTests {
         assertThat(response.statusCode()).isEqualTo(202);
         assertThat(body(response).path("state").asString()).isEqualTo("WAITING_FOR_PHONE");
         assertThat(repository.find(id).orElseThrow().requestEventId()).isEqualTo(event);
-        long version = repository.find(id).orElseThrow().version();
+        long version = sqlVersion(id);
         send(
                 PROVIDERS.last.get().process(),
                 ReservationTestSupport.event(
@@ -517,11 +524,11 @@ class ReservationIntegrationTests {
                 .untilAsserted(() -> assertThat(committed()).isGreaterThan(lastSent));
         assertThat(
                         jdbc.queryForObject(
-                                "SELECT COUNT(*) FROM reservation_inbox WHERE event_id=?",
+                                "SELECT COUNT(*) FROM reservation_processed_event WHERE event_id=?",
                                 Integer.class,
                                 event))
                 .isEqualTo(1);
-        assertThat(repository.find(id).orElseThrow().version()).isEqualTo(version);
+        assertThat(sqlVersion(id)).isEqualTo(version);
     }
 
     @Test
@@ -594,7 +601,7 @@ class ReservationIntegrationTests {
                 assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
                 var repeated = start(id, "09:00:00");
                 assertThat(repeated.statusCode()).isEqualTo(200);
-                assertThat(body(repeated).path("state").asString()).isEqualTo("CREATING_HOLD");
+                assertThat(body(repeated).path("state").asString()).isEqualTo("HOLD_PENDING");
                 assertThat(PROVIDERS.creates).hasValue(1);
             } finally {
                 release.countDown();
@@ -662,11 +669,11 @@ class ReservationIntegrationTests {
     }
 
     @Test
-    void offsetCannotAdvanceWhileTheActualInboxCommitIsBlocked() throws Exception {
+    void offsetCannotAdvanceWhileTheActualEventCommitIsBlocked() throws Exception {
         UUID id = UUID.randomUUID();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
         var hold = PROVIDERS.last.get();
-        faults.arm(CommitFaultDataSource.Mode.BLOCK, "insert into reservation_inbox", 1);
+        faults.arm(CommitFaultDataSource.Mode.BLOCK, "insert into reservation_processed_event", 1);
         try {
             send(
                     hold.process(),
@@ -687,104 +694,85 @@ class ReservationIntegrationTests {
     }
 
     @Test
-    void exhaustedCommitFailuresStopWithoutDiscardAndDemandCanResumeTheSameRecord()
+    void commitFailuresDoNotDiscardTheRecordAndRecoveryResumesAutomatically()
             throws Exception {
         UUID id = UUID.randomUUID();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
         var hold = PROVIDERS.last.get();
         String event = "retry-" + UUID.randomUUID();
-        faults.arm(CommitFaultDataSource.Mode.BEFORE, "insert into reservation_inbox", 3);
+        faults.arm(CommitFaultDataSource.Mode.BEFORE, "insert into reservation_processed_event", Integer.MAX_VALUE);
         send(
                 hold.process(),
                 ReservationTestSupport.event(hold, "AdditionalInformationRequested", event));
         await().atMost(Duration.ofSeconds(15))
-                .untilAsserted(
-                        () -> {
-                            assertThat(faults.remaining).hasValue(0);
-                            try (var admin =
-                                    Admin.create(
-                                            Map.of(
-                                                    "bootstrap.servers",
-                                                    KAFKA.getBootstrapServers()))) {
-                                assertThat(
-                                                admin.describeConsumerGroups(
-                                                                List.of(
-                                                                        ReservationTestSupport
-                                                                                .CONSUMER))
-                                                        .all()
-                                                        .get(5, TimeUnit.SECONDS)
-                                                        .get(ReservationTestSupport.CONSUMER)
-                                                        .members())
-                                        .isEmpty();
-                            }
-                        });
+                .untilAsserted(() -> assertThat(faults.remaining.get()).isLessThan(Integer.MAX_VALUE));
         assertThat(committed()).isLessThanOrEqualTo(lastSent);
         assertThat(repository.find(id).orElseThrow().phase())
                 .isEqualTo(ReservationPhase.WAITING_FOR_REQUEST);
         assertThat(
                         jdbc.queryForObject(
-                                "SELECT COUNT(*) FROM reservation_inbox WHERE event_id=?",
+                                "SELECT COUNT(*) FROM reservation_processed_event WHERE event_id=?",
                                 Integer.class,
                                 event))
                 .isZero();
         faults.clear();
-        channel.requestPreparation();
         phase(id, ReservationPhase.WAITING_FOR_PHONE);
         await().atMost(Duration.ofSeconds(10))
                 .untilAsserted(() -> assertThat(committed()).isGreaterThan(lastSent));
         assertThat(
                         jdbc.queryForObject(
-                                "SELECT COUNT(*) FROM reservation_inbox WHERE event_id=?",
+                                "SELECT COUNT(*) FROM reservation_processed_event WHERE event_id=?",
                                 Integer.class,
                                 event))
                 .isEqualTo(1);
     }
 
     @Test
-    void malformedOrForeignActionsAreStoredWithoutChangingTheOwnedProcess() throws Exception {
+    void aCommitBeforeKafkaAckIsDeduplicatedOnRedelivery() throws Exception {
         UUID id = UUID.randomUUID();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
         var hold = PROVIDERS.last.get();
-        send(
-                "wrong-key",
-                ReservationTestSupport.event(
-                        hold, "AdditionalInformationRequested", "foreign-" + UUID.randomUUID()));
-        long offset = lastSent;
-        await().atMost(Duration.ofSeconds(10))
-                .untilAsserted(
-                        () ->
-                                assertThat(
-                                                jdbc.queryForList(
-                                                        "SELECT outcome FROM reservation_inbox"
-                                                                + " WHERE topic=? AND"
-                                                                + " partition_number=0 AND"
-                                                                + " record_offset=?",
-                                                        ReservationTestSupport.TOPIC,
-                                                        offset))
-                                        .hasSize(1));
-        assertThat(repository.find(id).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.WAITING_FOR_REQUEST);
-        assertThat(
-                        jdbc.queryForObject(
-                                "SELECT outcome FROM reservation_inbox WHERE topic=? AND"
-                                        + " partition_number=0 AND record_offset=?",
-                                String.class,
-                                ReservationTestSupport.TOPIC,
-                                offset))
-                .isEqualTo("REJECTED");
+        long version = sqlVersion(id);
+        String eventId = "committed-no-ack-" + UUID.randomUUID();
+        faults.arm(CommitFaultDataSource.Mode.AFTER, "insert into reservation_processed_event", 1);
+        send(hold.process(), ReservationTestSupport.event(hold, "AdditionalInformationRequested", eventId));
+        await().atMost(Duration.ofSeconds(15))
+                .untilAsserted(() -> assertThat(committed()).isGreaterThan(lastSent));
+        assertThat(faults.remaining).hasValue(0);
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
+        assertThat(sqlVersion(id)).isEqualTo(version + 1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event WHERE event_id=?",
+                Integer.class, eventId)).isEqualTo(1);
     }
 
     @Test
-    void pendingAbandonmentKeepsSqlExclusionEvenAfterAConfirmation() throws Exception {
+    void malformedOrForeignActionsAreAcknowledgedWithoutChangingTheOwnedProcess() throws Exception {
         UUID id = UUID.randomUUID();
         assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
-        jdbc.update(
-                "UPDATE reservation_process SET phase='CONFIRMED', closed_at=CURRENT_TIMESTAMP(6),"
-                        + " abandonment_pending=TRUE WHERE id=?",
-                id.toString());
-        assertThat(repository.findPending(owner).orElseThrow().id()).isEqualTo(id);
-        assertThat(start(UUID.randomUUID(), "09:30").statusCode()).isEqualTo(409);
-        assertThat(PROVIDERS.creates).hasValue(1);
+        var hold = PROVIDERS.last.get();
+        String eventId = "foreign-" + UUID.randomUUID();
+        send("wrong-key", ReservationTestSupport.event(hold, "AdditionalInformationRequested", eventId));
+        send(hold.process(), "{invalid-json");
+        await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(committed()).isGreaterThan(lastSent));
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.WAITING_FOR_REQUEST);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event WHERE event_id=?",
+                Integer.class, eventId)).isZero();
+    }
+
+    @Test
+    void aConfirmedReservationReleasesOnlyTheLocalPendingSlot() throws Exception {
+        UUID id = UUID.randomUUID();
+        assertThat(start(id, "09:00").statusCode()).isEqualTo(202);
+        var process = repository.find(id).orElseThrow();
+        repository.reconcile(id, ListOwnReservationsTests.evidence(process,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED, null),
+                ReservationProcessTests.NOW);
+        assertThat(repository.findPending(owner)).isEmpty();
+        assertThat(start(UUID.randomUUID(), "09:30").statusCode()).isEqualTo(202);
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMED);
+        assertThat(PROVIDERS.creates).hasValue(2);
+        assertThat(PROVIDERS.cancellations).hasValue(0);
     }
 
     private static void awaitGate(CountDownLatch gate) {
@@ -813,4 +801,8 @@ class ReservationIntegrationTests {
                             MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()));
         }
     }
+    private long sqlVersion(UUID id) {
+        return jdbc.queryForObject("SELECT version FROM reservation_process WHERE id=?", Long.class, id.toString());
+    }
+
 }

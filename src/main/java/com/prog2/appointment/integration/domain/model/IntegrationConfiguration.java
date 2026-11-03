@@ -1,9 +1,8 @@
 package com.prog2.appointment.integration.domain.model;
 
-import com.prog2.appointment.integration.domain.enums.ProvisioningStatus;
 
-/** Configuración asignada a Turnos; no duplica catálogo ni exige credenciales Redis. */
-public record IntegrationConfiguration(String groupId, ProvisioningStatus provisioningStatus,
+/** Configuración aprovisionada asignada a Turnos; no duplica catálogo ni exige credenciales Redis. */
+public record IntegrationConfiguration(String groupId,
         String kafkaBootstrapServers, String kafkaConsumerGroupId,
         String kafkaAppointmentActionsTopic, String kafkaAppointmentPhoneTopic) {
 

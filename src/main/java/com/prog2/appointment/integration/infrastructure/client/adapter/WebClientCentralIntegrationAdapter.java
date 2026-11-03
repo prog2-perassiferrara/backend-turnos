@@ -1,5 +1,6 @@
 package com.prog2.appointment.integration.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.integration.domain.enums.AccessFailure;
 import com.prog2.appointment.integration.domain.exception.IntegrationGatewayException;
 import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
@@ -8,12 +9,9 @@ import com.prog2.appointment.integration.domain.ports.out.CentralIntegrationGate
 import com.prog2.appointment.integration.infrastructure.client.dto.IntegrationResponse;
 
 /** Adapter del GET de integración actual, sin login central ni otro envoltorio. */
+@RequiredArgsConstructor
 public final class WebClientCentralIntegrationAdapter implements CentralIntegrationGateway {
     private final SafeIntegrationHttpClient client;
-
-    public WebClientCentralIntegrationAdapter(SafeIntegrationHttpClient client) {
-        this.client = client;
-    }
 
     @Override
     public IntegrationConfiguration fetchConfiguration(TechnicalToken token) {

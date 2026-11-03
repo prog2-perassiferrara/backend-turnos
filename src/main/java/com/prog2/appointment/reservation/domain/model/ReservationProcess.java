@@ -1,10 +1,9 @@
 package com.prog2.appointment.reservation.domain.model;
 
 import java.time.Instant;
-import java.time.Duration;
-import com.prog2.appointment.reservation.domain.enums.CancellationKind;
 import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
 import java.util.Objects;
+import com.prog2.appointment.reservation.domain.enums.CancellationState;
 import java.util.UUID;
 import com.prog2.appointment.reservation.domain.enums.CentralAppointmentState;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
@@ -12,8 +11,8 @@ import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 
 /**
- * Agregado inmutable del proceso. Las transiciones conservan evidencia y nunca renuevan el hold. La
- * versión y writeId identifican la escritura local; no son IDs de cátedra.
+ * Agregado inmutable del proceso. Las transiciones conservan evidencia y nunca renuevan el hold. El
+ * writeId acredita una reclamación local cuando un efecto lo requiere; no es un ID de cátedra.
  */
 public record ReservationProcess(
         UUID id,
@@ -24,19 +23,17 @@ public record ReservationProcess(
         String requestEventId,
         Long reservationId,
         String reasonCode,
-        long version,
         UUID writeId,
         Instant closedAt,
-        boolean abandonmentPending,
         ProfessionalName professionalName,
-        CancellationProgress cancellation) {
+        CancellationState cancellation) {
     public ReservationProcess {
         Objects.requireNonNull(id);
         Objects.requireNonNull(patient);
         Objects.requireNonNull(selection);
         Objects.requireNonNull(phase);
         Objects.requireNonNull(writeId);
-        if (version < 0 || phase.isFinal() != (closedAt != null)) {
+        if (phase.isFinal() != (closedAt != null)) {
             throw new IllegalArgumentException("Inconsistent reservation process");
         }
     }
@@ -47,15 +44,13 @@ public record ReservationProcess(
                 request.requestId(),
                 patient,
                 request.selection(),
-                ReservationPhase.CREATING_HOLD,
+                ReservationPhase.HOLD_PENDING,
                 null,
                 null,
                 null,
                 null,
-                0,
                 UUID.randomUUID(),
                 null,
-                false,
                 null,
                 null);
     }
@@ -65,7 +60,7 @@ public record ReservationProcess(
     }
 
     public boolean isPending() {
-        return closedAt == null || abandonmentPending;
+        return closedAt == null;
     }
 
     public boolean matches(long ownerId, StartReservationRequest request) {
@@ -75,18 +70,10 @@ public record ReservationProcess(
     }
 
     public ReservationProcess acceptHold(HoldDetails value) {
-        if (phase != ReservationPhase.CREATING_HOLD && phase != ReservationPhase.HOLD_UNCERTAIN) {
+        if (phase != ReservationPhase.HOLD_PENDING) {
             return this;
         }
         return change(ReservationPhase.HELD, value, requestEventId, reservationId, null, null);
-    }
-
-    /** Nueva intención después de observar la posición libre; conserva la identidad lógica. */
-    public ReservationProcess prepareHoldRetry() {
-        if (phase != ReservationPhase.HOLD_UNCERTAIN || hold != null) {
-            return this;
-        }
-        return change(ReservationPhase.CREATING_HOLD, null, null, null, null, null);
     }
 
     /**
@@ -98,18 +85,17 @@ public record ReservationProcess(
      */
     public ReservationProcess abandonHoldAttempt(String reason, Instant now) {
         if (hold != null
-                || phase != ReservationPhase.HOLD_UNCERTAIN
-                        && phase != ReservationPhase.CREATING_HOLD) {
+                || phase != ReservationPhase.HOLD_PENDING) {
             return this;
         }
-        return change(ReservationPhase.HOLD_ATTEMPT_ABANDONED, null, null, null, reason, now);
+        return change(ReservationPhase.FAILED, null, null, null, reason, now);
     }
 
     public ReservationProcess beginConfirmation() {
-        if (phase != ReservationPhase.HELD || abandonmentPending) {
+        if (phase != ReservationPhase.HELD) {
             return this;
         }
-        return change(ReservationPhase.CONFIRMING, hold, requestEventId, reservationId, null, null);
+        return change(ReservationPhase.CONFIRMATION_PENDING, hold, requestEventId, reservationId, null, null);
     }
 
     /**
@@ -123,13 +109,13 @@ public record ReservationProcess(
 
     /**
      * Solo puede usarlo quien conserva su reclamación y todavía no invocó el transporte.
-     * Tras un reinicio CONFIRMING no demuestra que el POST no se haya enviado.
+     * Tras un reinicio CONFIRMATION_PENDING no demuestra que el POST no se haya enviado.
      * @param claimed permiso propio obtenido en esta ejecución
      * @param now instante justo antes del transporte
      * @return vencimiento seguro o estado actual si otra transición avanzó
      */
     public ReservationProcess expireUnsentConfirmation(ReservationProcess claimed, Instant now) {
-        if (phase != ReservationPhase.CONFIRMING || !writeId.equals(claimed.writeId())
+        if (phase != ReservationPhase.CONFIRMATION_PENDING || !writeId.equals(claimed.writeId())
                 || hold == null || now.isBefore(hold.expiresAt())) return this;
         return expireKnownHold(now);
     }
@@ -152,8 +138,7 @@ public record ReservationProcess(
                             ReservationFailure.CORRELATION_MISMATCH.name(),
                             null);
         }
-        if (phase != ReservationPhase.CONFIRMING
-                && phase != ReservationPhase.CONFIRMATION_UNCERTAIN) {
+        if (phase != ReservationPhase.CONFIRMATION_PENDING) {
             return this;
         }
         return change(
@@ -190,8 +175,8 @@ public record ReservationProcess(
         if (hold == null) {
             var state =
                     !failure.attempted() || failure.definitive()
-                            ? ReservationPhase.REJECTED
-                            : ReservationPhase.HOLD_UNCERTAIN;
+                            ? ReservationPhase.FAILED
+                            : ReservationPhase.HOLD_PENDING;
             return change(
                     state,
                     null,
@@ -203,7 +188,7 @@ public record ReservationProcess(
         var state =
                 failure.definitive()
                         ? ReservationPhase.RECONCILIATION_REQUIRED
-                        : ReservationPhase.CONFIRMATION_UNCERTAIN;
+                        : ReservationPhase.CONFIRMATION_PENDING;
         return change(state, hold, requestEventId, reservationId, failure.failure().name(), null);
     }
 
@@ -293,7 +278,6 @@ public record ReservationProcess(
         return phase == ReservationPhase.WAITING_FOR_PHONE
                 && hold != null
                 && requestEventId != null
-                && !abandonmentPending
                 && now.isBefore(hold.expiresAt());
     }
 
@@ -305,7 +289,7 @@ public record ReservationProcess(
 
     /** El ACK solo permite avanzar la respuesta todavía activa. */
     public ReservationProcess phonePublished() {
-        return phase == ReservationPhase.PHONE_QUEUED && !abandonmentPending
+        return phase == ReservationPhase.PHONE_QUEUED
                 ? change(
                         ReservationPhase.WAITING_FOR_RESULT,
                         hold,
@@ -360,10 +344,8 @@ public record ReservationProcess(
                 requestEventId,
                 reservationId,
                 reasonCode,
-                version,
                 writeId,
                 closedAt,
-                abandonmentPending,
                 name,
                 cancellation);
     }
@@ -374,8 +356,7 @@ public record ReservationProcess(
                         && evidence.state() == CentralAppointmentState.CANCELLED)) return this;
         return switch (evidence.state()) {
             case PHONE_PENDING ->
-                    phase == ReservationPhase.CONFIRMATION_UNCERTAIN
-                                    || phase == ReservationPhase.CONFIRMING
+                    phase == ReservationPhase.CONFIRMATION_PENDING
                             ? change(
                                     ReservationPhase.WAITING_FOR_REQUEST,
                                     hold,
@@ -430,12 +411,6 @@ public record ReservationProcess(
             Long reservation,
             String reason,
             Instant closed) {
-        boolean pendingAbandonment =
-                abandonmentPending
-                        && state != ReservationPhase.CANCELLED
-                        && state != ReservationPhase.EXPIRED
-                        && state != ReservationPhase.FAILED
-                        && state != ReservationPhase.HOLD_ATTEMPT_ABANDONED;
         return new ReservationProcess(
                 id,
                 patient,
@@ -445,79 +420,20 @@ public record ReservationProcess(
                 request,
                 reservation,
                 reason,
-                version,
                 writeId,
                 closed,
-                pendingAbandonment,
                 professionalName,
-                progressAfter(state, closed));
+                cancellationAfter(state));
     }
 
-    /**
-     * Acepta una intención propia sin ejecutar REST. La aceptación y el cierre del outbox
-     * se conservan juntos por el repositorio.
-     * @param kind acción explícita
-     * @param retryVersion versión observada para reintento; null significa solicitud/replay
-     * @param now instante de aceptación
-     * @return proceso actualizado o el resultado ya conocido
-     */
-    public ReservationProcess requestCancellation(CancellationKind kind, Integer retryVersion, Instant now) {
-        Objects.requireNonNull(kind);
-        if (cancellation != null) {
-            if (kind != cancellation.kind()) {
-                throw new ReservationCancellationException(ReservationFailure.CANCELLATION_KIND_CONFLICT);
-            }
-            return retryVersion == null ? this
-                    : withCancellation(cancellation.retry(retryVersion, now), abandonmentPending);
-        }
-        if (retryVersion != null) {
-            throw new ReservationCancellationException(ReservationFailure.CANCELLATION_RETRY_NOT_READY);
-        }
-        if (phase == ReservationPhase.CANCELLED
-                || kind == CancellationKind.ABANDON && phase.isFinal() && phase != ReservationPhase.CONFIRMED) {
-            return this;
-        }
-        if (hold == null || phase.isFinal() && phase != ReservationPhase.CONFIRMED
-                || kind == CancellationKind.CANCEL && phase != ReservationPhase.CONFIRMED) {
+    /** @return intención propia de cancelar o retry, sin alterar la fase acreditada por cátedra */
+    public ReservationProcess requestCancellation() {
+        if (phase == ReservationPhase.CANCELLED) return this;
+        if (cancellation == CancellationState.PENDING) return this;
+        if (hold == null || phase != ReservationPhase.CONFIRMED) {
             throw new ReservationCancellationException(ReservationFailure.CANCELLATION_NOT_ALLOWED);
         }
-        return withCancellation(initialCancellation(kind, now),
-                kind == CancellationKind.ABANDON && !phase.isFinal());
-    }
-
-    private CancellationProgress initialCancellation(CancellationKind kind, Instant now) {
-        var progress = CancellationProgress.create(kind, now);
-        return kind == CancellationKind.ABANDON && phase != ReservationPhase.CONFIRMED
-                ? progress.awaitExpiry(hold.expiresAt()) : progress;
-    }
-
-    /**
-     * @param now instante de evaluación
-     * @return si venció una espera estable de un abandono; el llamador debe comprobar además
-     *     que nunca se registró una respuesta telefónica antes de aplicar el cierre
-     */
-    public boolean canExpireAbandonment(Instant now) {
-        return abandonmentPending && hold != null && !now.isBefore(hold.expiresAt())
-                && (phase == ReservationPhase.HELD || phase == ReservationPhase.WAITING_FOR_REQUEST
-                        || phase == ReservationPhase.WAITING_FOR_PHONE);
-    }
-
-    /**
-     * Cierre local por el plazo central de una espera estable sin teléfono registrado.
-     * No acredita cancelar ni garantiza que el horario siga disponible.
-     * @param now instante de cierre
-     * @return proceso vencido, o el estado actual si una transición concurrente impide el cierre
-     */
-    public ReservationProcess expireAbandonment(Instant now) {
-        return canExpireAbandonment(now)
-                ? change(ReservationPhase.EXPIRED, hold, requestEventId, reservationId,
-                        ReservationFailure.HOLD_EXPIRED.name(), now) : this;
-    }
-
-    /** Reclamación pura: el adapter solo habilita HTTP después del commit verificable. */
-    public ReservationProcess claimCancellation(Instant now, Duration budget) {
-        return cancellation == null ? this
-                : withCancellation(cancellation.claim(now, budget), abandonmentPending);
+        return withCancellation(CancellationState.PENDING, null);
     }
 
     /** Un resultado antiguo puede acreditar cancelación, pero no reabrir otro cierre. */
@@ -528,28 +444,21 @@ public record ReservationProcess(
                 evidence.reservationId(), null, now);
     }
 
-    /** Un fallo solo afecta su intento; una confirmación concurrente preserva el abandono. */
-    public ReservationProcess cancellationFailed(ReservationProcess claimed,
-            ReservationGatewayException failure, Instant now, Duration retry, Duration cooldown) {
-        if (cancellation == null || !cancellation.matches(claimed.cancellation())) return this;
-        boolean confirmedSinceClaim = abandonmentPending && phase == ReservationPhase.CONFIRMED
-                && claimed.phase() != ReservationPhase.CONFIRMED;
-        return withCancellation(cancellation.failed(failure.failure().name(),
-                failure.definitive() && !confirmedSinceClaim, now, retry, cooldown), abandonmentPending);
+    /** Detiene nuevos POST automáticos sin presentar el fallo como cancelación central. */
+    public ReservationProcess requireCancellationRetry(String code) {
+        return cancellation != CancellationState.PENDING ? this
+                : withCancellation(CancellationState.RETRY_REQUIRED, code);
     }
 
-    private CancellationProgress progressAfter(ReservationPhase next, Instant at) {
-        if (cancellation == null) return null;
-        if (next == ReservationPhase.CANCELLED || next == ReservationPhase.EXPIRED
-                || next == ReservationPhase.FAILED) return cancellation.resolve();
-        return next == ReservationPhase.CONFIRMED && phase != ReservationPhase.CONFIRMED
-                ? cancellation.confirmed(at) : cancellation;
+    private CancellationState cancellationAfter(ReservationPhase next) {
+        return next == ReservationPhase.CANCELLED || next == ReservationPhase.EXPIRED
+                || next == ReservationPhase.FAILED ? null : cancellation;
     }
 
-    private ReservationProcess withCancellation(CancellationProgress progress, boolean abandoning) {
-        if (Objects.equals(progress, cancellation) && abandoning == abandonmentPending) return this;
+    private ReservationProcess withCancellation(CancellationState state, String code) {
+        if (state == cancellation && Objects.equals(code, reasonCode)) return this;
         return new ReservationProcess(id, patient, selection, phase, hold, requestEventId,
-                reservationId, reasonCode, version, writeId, closedAt, abandoning, professionalName, progress);
+                reservationId, code, writeId, closedAt, professionalName, state);
     }
 
     @Override

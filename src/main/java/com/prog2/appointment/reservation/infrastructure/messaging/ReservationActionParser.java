@@ -1,38 +1,30 @@
 package com.prog2.appointment.reservation.infrastructure.messaging;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import lombok.RequiredArgsConstructor;
 import java.time.Instant;
+import java.util.Optional;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.HexFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.prog2.appointment.reservation.domain.enums.ReservationActionType;
 import com.prog2.appointment.reservation.domain.model.HoldDetails;
 import com.prog2.appointment.reservation.domain.model.ReservationAction;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
 import com.prog2.appointment.reservation.domain.model.ReservationSelection;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Frontera v1: convierte datos externos sin cargar clases indicadas por el mensaje. */
+@RequiredArgsConstructor
 public final class ReservationActionParser {
     private final JsonMapper json;
     private final String group;
 
-    public ReservationActionParser(JsonMapper json, String group) {
-        this.json = json;
-        this.group = group;
-    }
-
     /**
-     * @return hecho validado o rechazo durable; nunca lanza el cuerpo de entrada como error
+     * @return hecho validado o vacío para mensajes inválidos; no conserva ni expone el payload
      */
-    public ReservationDelivery parse(ReservationDelivery.Origin origin, String payload) {
+    public Optional<ReservationAction> parse(String key, String payload) {
         String body = payload == null ? "" : payload;
         if (body.length() > 1_048_576) {
-            return new ReservationDelivery(
-                    origin, null, body.substring(0, 65536), hash(body), "PAYLOAD_TOO_LARGE");
+            return Optional.empty();
         }
         try {
             var dto = json.readValue(body, ActionDto.class);
@@ -40,7 +32,7 @@ public final class ReservationActionParser {
                     || !Integer.valueOf(1).equals(dto.schemaVersion())
                     || dto.occurredAt() == null
                     || !HoldDetails.identifier(dto.eventType())
-                    || !dto.reservationProcessId().equals(origin.key())
+                    || !dto.reservationProcessId().equals(key)
                     || dto.groupId() != null && !group.equals(dto.groupId())) {
                 throw new IllegalArgumentException();
             }
@@ -62,24 +54,9 @@ public final class ReservationActionParser {
             var action =
                     new ReservationAction(
                             type, correlation, dto.expiresAt(), dto.reservationId(), selection);
-            // El orden de propiedades JSON y los campos adicionales no cambian la identidad del
-            // hecho.
-            var fingerprintAction =
-                    type == ReservationActionType.PHONE_REJECTED
-                            ? new ReservationAction(
-                                    ReservationActionType.OTHER,
-                                    correlation,
-                                    dto.expiresAt(),
-                                    dto.reservationId(),
-                                    selection)
-                            : action;
-            var content =
-                    new EventContent(
-                            dto.eventType(), dto.occurredAt(), dto.reason(), fingerprintAction);
-            return new ReservationDelivery(
-                    origin, action, body, hash(json.writeValueAsString(content)), null);
+            return Optional.of(action);
         } catch (RuntimeException _) {
-            return new ReservationDelivery(origin, null, body, hash(body), "INVALID_ACTION");
+            return Optional.empty();
         }
     }
 
@@ -120,17 +97,6 @@ public final class ReservationActionParser {
         };
     }
 
-    private static String hash(String value) {
-        try {
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 unavailable", exception);
-        }
-    }
-
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record ActionDto(
             String eventId,
@@ -150,6 +116,4 @@ public final class ReservationActionParser {
             String status,
             String reason) {}
 
-    private record EventContent(
-            String eventType, Instant occurredAt, String reason, ReservationAction action) {}
 }
