@@ -3,6 +3,7 @@ package com.prog2.appointment.reservation.infrastructure.web.dto;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Progreso público propio; los identificadores técnicos/credenciales centrales no se entregan a
@@ -12,9 +13,9 @@ public record ReservationProcessResponse(
         UUID processId,
         long professionalId,
         LocalDate date,
-        String startTime,
-        String state,
-        Instant expiresAt,
+        @Schema(description = "Hora local de atención en formato HH:mm:ss.") String startTime,
+        @Schema(description = "Fase durable del proceso; no acredita por sí sola el resultado central.") String state,
+        @Schema(description = "Vencimiento UTC del hold, si existe.") Instant expiresAt,
         String reasonCode,
         UUID phoneRequestId,
         String requiredField,
@@ -22,7 +23,9 @@ public record ReservationProcessResponse(
         String warningCode,
         String professionalFirstName,
         String professionalLastName,
-        CancellationView cancellation) {
+        @Schema(description = "Intención de cancelación; la fase CANCELLED acredita el resultado.") CancellationView cancellation) {
     /** Intención propia mínima; la fase CANCELLED acredita la cancelación. */
-    public record CancellationView(String status, boolean canRetry) {}
+    public record CancellationView(
+            @Schema(description = "PENDING o RETRY_REQUIRED.") String status,
+            boolean canRetry) {}
 }

@@ -69,13 +69,14 @@ public class SecurityConfiguration {
     @Bean
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSecurityProperties properties,
-            JsonMapper mapper) {
+            JsonMapper mapper, Environment environment) {
         var problems = new SecurityProblemHandler(mapper);
         var authorities = new JwtGrantedAuthoritiesConverter();
         authorities.setAuthoritiesClaimName("auth");
         authorities.setAuthorityPrefix("");
         var authentication = new JwtAuthenticationConverter();
         authentication.setJwtGrantedAuthoritiesConverter(authorities);
+        boolean documentationEnabled = environment.getProperty("app.api-docs.enabled", Boolean.class, false);
         return http
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -88,14 +89,21 @@ public class SecurityConfiguration {
                 .oauth2ResourceServer(resource -> resource
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(authentication))
                         .authenticationEntryPoint(problems).accessDeniedHandler(problems))
-                .authorizeHttpRequests(routes -> routes
-                        // Permite el despacho interno de errores, no una petición externa a /error.
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/register", "/api/authenticate").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
-                        .requestMatchers("/api/internal/**").denyAll()
-                        .requestMatchers("/api/**").hasAuthority("ROLE_USER")
-                        .anyRequest().denyAll())
+                .authorizeHttpRequests(routes -> {
+                    // Solo abre la lectura documental; no amplía el acceso a las APIs de negocio.
+                    if (documentationEnabled) {
+                        routes.requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs.yaml",
+                                "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll();
+                    }
+                    routes
+                            // Permite el despacho interno de errores, no una petición externa a /error.
+                            .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                            .requestMatchers(HttpMethod.POST, "/api/register", "/api/authenticate").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                            .requestMatchers("/api/internal/**").denyAll()
+                            .requestMatchers("/api/**").hasAuthority("ROLE_USER")
+                            .anyRequest().denyAll();
+                })
                 .build();
     }
 

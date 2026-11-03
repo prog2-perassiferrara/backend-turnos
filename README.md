@@ -52,6 +52,7 @@ cuenta registrada manualmente, cuya sesión de cátedra administra Catálogo.
 | `CATEDRA_GROUP_ID` | Identificador normalizado de la integración esperada; no es un paciente. |
 | `JWT_PRIVATE_KEY_PATH` | Archivo externo PKCS#8 de privada RSA, al menos 2048 bits. En Compose es la ruta del host que se monta dentro del contenedor. |
 | `CORS_ALLOWED_ORIGINS` | Opcional, orígenes web HTTP(S) separados por comas. Vacío por defecto; no admite comodines. Android nativo y llamadas entre backends no requieren un origen web. |
+| `API_DOCS_ENABLED` | Opcional, `false` por defecto. Habilita OpenAPI y Swagger UI solo para lectura anónima; no amplía el acceso a las APIs de negocio ni cambia la autenticación JWT. |
 | `AVAILABILITY_TIME_ZONE` | Opcional, zona de atención; por defecto `America/Argentina/Buenos_Aires`, independiente de la del dispositivo/contenedor. |
 | `AVAILABILITY_HTTP_TIMEOUT` | Opcional, conexión/lectura de las consultas de disponibilidad, por defecto `5s`; total por proveedor de `10s` con ese valor. |
 | `RESERVATION_HTTP_TIMEOUT` | Opcional, conexión/lectura de los POST y las consultas de ocupaciones/reservas, `5s`; total por llamada de `10s`. Sin replay del transporte. |
@@ -175,6 +176,30 @@ unset MYSQL_ROOT_PASSWORD
 El backend rechaza el arranque con configuración obligatoria ausente o en blanco,
 configuración inválida o base inaccesible. Los diagnósticos identifican el problema
 sin imprimir contraseñas.
+
+## OpenAPI y Swagger UI
+
+Deshabilitados por defecto. Para habilitarlos, definir `API_DOCS_ENABLED=true` en
+`.env` con Compose, o en el entorno del proceso/IDE, y reiniciar/recrear el servicio.
+Con el puerto predeterminado:
+
+- Swagger UI: <http://localhost:8081/swagger-ui.html>.
+- Contrato JSON: <http://localhost:8081/v3/api-docs>.
+- Contrato YAML: <http://localhost:8081/v3/api-docs.yaml>.
+
+Cuando están habilitados, estas páginas y recursos se consultan sin JWT; las APIs
+conservan su autenticación. En **Authorize**, pegar el JWT propio de Turnos sin el
+prefijo `Bearer`. Para ejecutar una consulta, abrir la operación y usar
+**Try it out** y **Execute**: son solicitudes reales al backend, con sus permisos,
+errores y efectos habituales. `/api/register` y `/api/authenticate` no requieren
+bearer; el resto exige JWT de usuario con `ROLE_USER`. El JWT técnico de cátedra no
+autentica estas APIs y no se emiten tokens desde esta documentación.
+
+El contrato contiene ejemplos ficticios y no incluye credenciales de ejecución.
+La UI no conserva la autorización al recargar. Consultar la documentación no ejecuta
+negocio ni requiere que Catálogo o cátedra estén disponibles si el backend ya está
+activo. Para deshabilitarla, quitar la variable o establecerla en `false` y reiniciar
+o recrear.
 
 ## Compilar y verificar
 

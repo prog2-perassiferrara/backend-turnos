@@ -24,6 +24,7 @@ técnica asíncrona, inbox con replay y ciclos versionados de cancelación.
 | Cancelación/abandono original | [SPEC](cancelacion-abandono/SPEC.md), [PLAN](cancelacion-abandono/PLAN.md), [TASKS](cancelacion-abandono/TASKS.md) |
 | Recuperación | [SPEC](recuperacion-procesos/SPEC.md), [PLAN](recuperacion-procesos/PLAN.md), [TASKS](recuperacion-procesos/TASKS.md) |
 | Simplificación, Etapas 1 a 6 | [SPEC](simplificacion-reservas/SPEC.md), [PLAN](simplificacion-reservas/PLAN.md), [TASKS](simplificacion-reservas/TASKS.md) |
+| OpenAPI, Swagger UI y timeout de integración | [SPEC](openapi-swagger/SPEC.md), [PLAN](openapi-swagger/PLAN.md), [TASKS](openapi-swagger/TASKS.md) |
 
 Se conservan resultados y revisiones originales; nombres de logs o ensayos temporales
 son referencias históricas, **no archivos incluidos ni pasos necesarios para ejecutar**.

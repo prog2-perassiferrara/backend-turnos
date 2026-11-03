@@ -51,6 +51,8 @@ logging:
     org.apache.kafka.clients.producer.ProducerConfig: WARN
 
 app:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
   reservation:
     http-timeout: ${RESERVATION_HTTP_TIMEOUT:5s}
     metadata-timeout: ${RESERVATION_METADATA_TIMEOUT:5s}
@@ -62,3 +64,14 @@ app:
   availability:
     time-zone: ${AVAILABILITY_TIME_ZONE:America/Argentina/Buenos_Aires}
     http-timeout: ${AVAILABILITY_HTTP_TIMEOUT:5s}
+
+springdoc:
+  api-docs:
+    enabled: ${app.api-docs.enabled}
+  swagger-ui:
+    enabled: ${app.api-docs.enabled}
+    persist-authorization: false
+    disable-swagger-default-url: true
+  paths-to-match: /api/**
+  show-actuator: false
+  override-with-generic-response: false
