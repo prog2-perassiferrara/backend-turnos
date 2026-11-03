@@ -1,5 +1,6 @@
 package com.prog2.appointment.availability.infrastructure.web.controller;
 
+import lombok.RequiredArgsConstructor;
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
@@ -14,14 +15,10 @@ import com.prog2.appointment.availability.infrastructure.web.mapper.Availability
 
 /** Adaptador HTTP de CU-03; los filtros existentes autentican/autorizan antes de consultar proveedores. */
 @RestController
+@RequiredArgsConstructor
 public final class AvailabilityController {
     private final GetAvailabilityUseCase availability;
     private final AvailabilityDtoMapper mapper;
-
-    public AvailabilityController(GetAvailabilityUseCase availability, AvailabilityDtoMapper mapper) {
-        this.availability = availability;
-        this.mapper = mapper;
-    }
 
     /** @return horarios libres o lista vacía válida; no representa una reserva ni un bloqueo */
     @GetMapping(path = "/api/appointment-availability", produces = MediaType.APPLICATION_JSON_VALUE)

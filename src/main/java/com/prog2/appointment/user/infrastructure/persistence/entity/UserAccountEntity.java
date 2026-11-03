@@ -1,5 +1,6 @@
 package com.prog2.appointment.user.infrastructure.persistence.entity;
 
+import lombok.Getter;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -20,22 +21,27 @@ import com.prog2.appointment.user.domain.model.RegistrationData;
 public class UserAccountEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Getter
     private Long id;
     @Column(nullable = false, length = 50)
     private String login;
     @Column(nullable = false, length = 254)
     private String email;
     @Column(name = "first_name", nullable = false, length = 50)
+    @Getter
     private String firstName;
     @Column(name = "last_name", nullable = false, length = 50)
+    @Getter
     private String lastName;
     @Column(name = "image_url", length = 256)
     private String imageUrl;
     @Column(name = "lang_key", nullable = false, length = 10)
     private String langKey;
     @Column(name = "password_hash", nullable = false, length = 255)
+    @Getter
     private String passwordHash;
     @Column(nullable = false)
+    @Getter
     private boolean activated;
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -76,22 +82,6 @@ public class UserAccountEntity {
         this.identifiers.add(login);
         this.identifiers.add(email);
         this.authorities.add("ROLE_USER");
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getFirstName() { return firstName; }
-
-    public String getLastName() { return lastName; }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public boolean isActivated() {
-        return activated;
     }
 
     public Set<String> getAuthorities() {

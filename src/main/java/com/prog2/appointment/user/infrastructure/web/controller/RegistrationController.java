@@ -1,5 +1,6 @@
 package com.prog2.appointment.user.infrastructure.web.controller;
 
+import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -13,14 +14,10 @@ import com.prog2.appointment.user.infrastructure.web.mapper.RegistrationDtoMappe
 
 /** Adaptador HTTP público de CU-01; el 201 confirma el alta antes del login automático del cliente. */
 @RestController
+@RequiredArgsConstructor
 public final class RegistrationController {
     private final RegisterUserUseCase registration;
     private final RegistrationDtoMapper mapper;
-
-    public RegistrationController(RegisterUserUseCase registration, RegistrationDtoMapper mapper) {
-        this.registration = registration;
-        this.mapper = mapper;
-    }
 
     /** @return 201 sin cuerpo ni JWT; KMP ejecuta luego authenticate sin otra acción de la persona */
     @PostMapping("/api/register")

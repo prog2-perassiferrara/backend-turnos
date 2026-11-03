@@ -1,5 +1,6 @@
 package com.prog2.appointment.user.infrastructure.web.controller;
 
+import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -13,12 +14,9 @@ import com.prog2.appointment.user.infrastructure.web.dto.AuthenticationResponse;
 
 /** Adaptador HTTP público de CU-02, reutilizado por el login automático y el independiente. */
 @RestController
+@RequiredArgsConstructor
 public final class AuthenticationController {
     private final AuthenticateUserUseCase authentication;
-
-    public AuthenticationController(AuthenticateUserUseCase authentication) {
-        this.authentication = authentication;
-    }
 
     /** @return id_token y cabecera bearer de la misma cuenta autenticada; sin cookie ni sesión HTTP */
     @PostMapping("/api/authenticate")
