@@ -1,5 +1,12 @@
 # PLAN: Iniciar reserva con hold y confirmación inicial
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+**Ajuste posterior aprobado, 2026-11-02:** Simplificación autorizada: HOLD_PENDING reúne la intención de creación sin IDs y su resultado desconocido; CONFIRMATION_PENDING reúne la intención de confirmación y su resultado desconocido. Tras reinicio ninguna habilita repetir el POST. Solo la ejecución que acredita su propia inserción/reclamación conserva permiso de efecto. FAILED reúne cierres locales antes llamados REJECTED y HOLD_ATTEMPT_ABANDONED, conservando el motivo sin acreditar liberación central. El rechazo de teléfono sigue siendo corregible en WAITING_FOR_PHONE. Migración adicional, sin modificar migraciones aplicadas. Confirmado y autorizado a implementar por el usuario en la revisión de simplificación. RF/CA vigentes conservados; se revalidan las transiciones, recuperación, concurrencia y migraciones afectadas.
+
+
 **SPEC de referencia:** [SPEC.md aprobada](SPEC.md).
 **Versión de la spec revisada:** aprobación explícita del 2026-10-29, nueve RF/diez CA; código base f0e452d.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
@@ -10,30 +17,6 @@
 **Ajuste autorizado, 2026-10-30:** el registro incorpora únicamente el mínimo de dos caracteres por nombre/apellido, conservando su máximo de 50, mediante la validación del DTO de user indicada en [su PLAN](../registro-autenticacion/PLAN.md). RF-01/CA-01 mantienen la defensa de reservas para perfiles existentes incompatibles; la integración prepara esos perfiles directamente en la base temporal y comprueba el inicio con un perfil nuevo mínimo válido. Sin cambios al modelo de paciente central ni a las tablas.
 
 **Ajuste autorizado, 2026-10-30, creación incierta:** extender `AppointmentHoldGateway` con consulta de la ocupación seleccionada y modelos/DTO propios, sin internals de otros slices. Aplicación guarda incertidumbre, consulta y solo permite repetir creación tras posición libre, con `RESERVATION_ATTEMPTS` (3 por defecto, total) y revalidación de agenda/canal/reloj. Conserva una única ejecución original por requestId; los replays no ejecutan POST. HELD/CONFIRMED, consulta fallida o presupuesto agotado archivan sin IDs como `HOLD_ATTEMPT_ABANDONED`, liberando únicamente exclusión local; `recheckAt` opcional en el problema HTTP identifica el instante central para volver a consultar una posición HELD, nunca un vencimiento propio. Confirmación REST no se reintenta. Se entrega Clock con zona de atención y presupuesto por constructor (siete dependencias), sin políticas/clases de ejecución adicionales ni migraciones. RF-03/RF-04/RF-07/RF-08 y CA-03/CA-06/CA-07/CA-09; casos antes/depués de expiresAt, libre→409, falta de consulta y reinicio de intento abandonado. Autorización directa del usuario tras la respuesta docente, sin nueva ronda de aprobación.
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
-Este documento define la solución técnica. Una vez revisado, el agente puede
-derivar TASKS.md con tareas, dependencias y comprobaciones.
--->
-
-<!-- PARA EL AGENTE
-- Lee la SPEC.md aprobada, las instrucciones del proyecto y los contratos pertinentes.
-  Si falta un documento necesario o la spec no está aprobada, indícalo antes de avanzar.
-- Inspecciona el repositorio. Referencia rutas verificadas y distingue las nuevas propuestas.
-- Propón una solución proporcional al alcance y coherente con el proyecto.
-  Reutiliza lo existente y justifica nuevas dependencias o cambios de arquitectura.
-- Distingue hechos, decisiones confirmadas y propuestas. Consulta las decisiones
-  no resueltas; haz pocas preguntas por vez y actualiza el plan con las respuestas.
-- Referencia los requisitos y criterios por su ID, sin copiar toda la spec.
-- Si una decisión cambia el comportamiento o alcance, vuelve a la spec y solicita
-  confirmación. No resuelvas una duda de producto mediante una suposición técnica.
-- Conserva estos comentarios. No implementes durante la planificación.
-- Solicita aprobación antes de marcar el plan como Aprobado. La autorización
-  para implementar debe ser explícita; no se deduce del estado de los documentos.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Contexto técnico verificado
 
@@ -181,14 +164,14 @@ Referencia RF/CA y completa solo los puntos pertinentes al backend. -->
 
 | Fase propuesta | Significado |
 | --- | --- |
-| CREATING_HOLD / HOLD_UNCERTAIN | Intención antes de cada POST / resultado desconocido; consulta de ocupaciones antes de preparar otro intento acotado. |
-| HOLD_ATTEMPT_ABANDONED | Cierre local del intento sin IDs; no acredita cancelación ni expiración central. Otra acción exige validación/ocupaciones nuevas. |
+| HOLD_PENDING | Intención durable sin hold reconocido. Solo la ejecución original puede crear; si perdió la respuesta, debe observar libre la posición antes de otro intento acotado. Tras reinicio se archiva sin repetir. |
+| FAILED | Cierre local por rechazo, intento sin IDs abandonado o fallo central. El motivo se conserva; no acredita por sí solo liberación central. |
 | HELD | IDs/vencimiento guardados, sin confirmación inicial acreditada. |
-| CONFIRMING / CONFIRMATION_UNCERTAIN | Intención previa al segundo POST / resultado desconocido. |
+| CONFIRMATION_PENDING | Intención durable de confirmación, sin aceptación inicial reconocida. Solo su reclamante puede emitir; cualquier recuperación consulta evidencia, sin repetir. |
 | WAITING_FOR_REQUEST | 202 aceptado, sin solicitud Kafka recibida. |
 | WAITING_FOR_PHONE | Solicitud correlacionada conservada, incluso anterior al 202. |
 | RECONCILIATION_REQUIRED | Inconsistencia/rechazo posterior al hold sin cierre acreditado. |
-| REJECTED / EXPIRED | Rechazo sin efecto pendiente o vencimiento central verificado. |
+| EXPIRED | Vencimiento acreditado según el contrato o cierre seguro de un hold nunca confirmado. |
 | CONFIRMED / CANCELLED | Evidencia terminal recibida que bloquea regresiones; no implementa envío de teléfono ni cancelación. |
 
 El receptor valida v1, key/proceso, hold y groupId cuando exista. Aplica solicitud/vencimiento; AppointmentProcessInvalid exige reconciliación. Una evidencia terminal válida conserva estado/reservationId y no se reabre; otros mensajes quedan conservados para su tratamiento, sin sustituir CU-05 completo. Abandono pendiente mantiene la exclusión incluso con resultado central conocido.

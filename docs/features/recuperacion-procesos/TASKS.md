@@ -1,7 +1,17 @@
 # TASKS: Recuperar procesos pendientes y resultados inciertos (CU-09)
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
+**Ajuste posterior autorizado:** aplicar las decisiones de simplificación del [PLAN](PLAN.md) y su [SPEC](SPEC.md); la evidencia anterior corresponde a la implementación previa. La validación nueva se registra en el cierre de simplificación de recuperación.
+
+
 **Referencias:** [SPEC aprobada](SPEC.md), [PLAN aprobado](PLAN.md), [#14](https://github.com/prog2-perassiferrara/backend-turnos/issues/14).
-**Estado:** Implementación y validación local completas. Validación remota de esta revisión pendiente de publicación.
+**Estado:** Simplificación implementada y validada localmente. Feedback remoto pendiente de publicación. La evidencia previa conserva su revisión original.
 **Aprobaciones:** SPEC y PLAN aprobados explícitamente el 2026-11-02; TASKS aprobadas explícitamente el 2026-11-02.
 **Autorización de implementación:** explícita el 2026-11-02.
 
@@ -73,3 +83,24 @@
 **Desviaciones del PLAN:** ninguna de alcance o arquitectura. El detalle de vencimiento entre claim y transporte está aclarado en PLAN. Se corrigió el aislamiento de fixtures telefónicos para el nuevo trabajo automático, conservando las comprobaciones existentes; E-02 distingue ese fallo y su repetición.
 
 **Límite de integración real:** siguen sin respuesta los reportes de eventos ausentes, FAILED sin evento y ocupaciones durante PHONE_PENDING. No se presupone su causa ni se modifica el contrato para compensarlos.
+
+
+## Simplificación autorizada de reservas
+
+Chequeo previo: las equivalencias y reglas de recuperación fueron aprobadas con autorización de implementación; no se agregan efectos ni se eliminan garantías de RF/CA. Se detendrá cualquier fusión que necesite reconstruir la fase anterior con motivos o flags.
+
+- [x] S-01: corregir preparación automática y verificación de evidencia concurrente. Regresiones de recuperación del canal y resultado Kafka más reciente.
+- [x] S-02: aplicar equivalencias de fases y migrar datos existentes conservando IDs, propietario y plazos; eliminar transición de reintento de creación. Regresión de inicio, dominio, SQL y reinicios.
+- [x] S-03: unificar revisiones y cancelar solo tras reclamar un POST autorizado; retirar contadores de lecturas y dispatcher redundante. Regresión de presupuesto, espera, concurrencia y outbox independiente.
+- [x] S-04: retirar versiones duplicadas del dominio y simplificar coordinación/persistencia sin perder permiso propio de efectos. Regresión de commits ambiguos y optimistic locking.
+- [x] S-05: verificar suite completa, migraciones, Javadoc y calidad local disponible; actualizar documentación y cierre con evidencia real.
+
+
+### Cierre de simplificación, 2026-11-02
+
+- **CA y evidencia:** se conservan CA-01 a CA-10 de la tabla anterior y los CA afectados de inicio, teléfono, consulta y cancelación. `ReservationProcessTests`, `StartReservationTests`, `ReservationRecoveryTests` y sus integraciones cubren las nuevas equivalencias sin decisiones por `reasonCode`; rechazo de teléfono corregible, terminales estables y permiso propio antes de efectos. Se eliminan la transición preparatoria del reintento de hold, la selección/dispatcher de cancelación separados y el contador de lecturas. `@Version` permanece en JPA; el guard local queda en una clase de aplicación. Inbox/outbox e identidad de eventos se conservan.
+- **Regresión:** sobre `c61d5ee` más esta revisión, `./mvnw -B -ntp clean verify` pasó 672 pruebas, cero fallos/errores/omisiones, en una copia aislada de pom/wrapper/src para evitar interferencia del IDE. Tras retirar los dos getters de versión sin consumidores, la integración de recuperación volvió a pasar sus 25 pruebas. La última suite telefónica pasó 30 ejecuciones: los 21 escenarios, con el de evento inválido repetido diez veces en la copia de validación. La repetición es experimental y no se agrega al código del proyecto. Son comprobaciones adicionales, no otra corrida completa de 672. El informe JaCoCo acumulado del bytecode final cubre 2917/3074 líneas (94,89 %) y 1407/1707 ramas (82,43 %), sin advertencias de clases incompatibles.
+- **Ajustes de validación:** los fixtures mantienen la caída de SQL hasta comprobar rollback/offset y luego exigen preparación automática sin intervención. La fecha del ciclo telefónico se enlaza como fecha/hora UTC y se comprueba al releerla, evitando el desfase JDBC de tres horas y su carrera con el publicador. Se exige HTTP 202 antes de comprobar el cierre por evento inválido. Una ausencia de fila observada en una ejecución adicional no se reprodujo en las diez repeticiones con esa precondición explícita; no se atribuye una causa de producción sin evidencia. Se conserva toda aserción funcional. La próxima revisión se limita por expiresAt cuando todavía es futuro, para no aplazar un cierre seguro hasta otro intervalo.
+- **JAR y migraciones:** 18 comprobaciones correctas con siete arranques, MySQL 8.4.8 temporal y proveedores ficticios: recuperación sin GET, caída/restablecimiento tras reinicio, cierre seguro, teléfono conservado, cancelación agotada solo por lectura y recibo diferido aplicado una vez. V8/V9 preservan identificadores, propietario, motivos, plazos y cierres; las pruebas migran desde V6/V7 conservando usuarios, inbox/outbox y nombres. Las 217 clases del JAR ensayado coinciden con las clases finales. Artefacto SHA-256 `f035ea509b892e502da5e8a7e282242ad972fede9b29f37f1477dd64f19427b9`; sin PEM/.env ni migración V1 de test. Contenedor y clave temporales retirados. No acredita el circuito central Kafka auténtico.
+- **Calidad y límites:** Javadoc de 20 Java productivos sin errores ni avisos (doclint salvo missing), `git diff --check` correcto y Sonar CLI sin secretos. CLI autenticado, pero análisis de código Vortex rechazado con 403; IDE fuera de sus raíces de análisis. No se presentan como inspecciones de código superadas. CI, cobertura nueva y Quality Gate de esta revisión requieren publicación por el usuario.
+- **Desviaciones:** ninguna de comportamiento frente a la simplificación aprobada. No se incorporan fases, flags, dependencias, tablas ni endpoints. No se eliminan las reclamaciones propias de efectos ni se reconstruyen fases mediante motivos. Las migraciones previas permanecen intactas y la evidencia anterior conserva su revisión.

@@ -1,5 +1,7 @@
 # PLAN: Registro y autenticación de usuarios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **SPEC de referencia:** [SPEC.md](SPEC.md), aprobada el 2026-10-20 con ajuste de contraseña confirmado el 2026-10-23.
 **Versión de la spec revisada:** 10 RF y 12 CA; ajuste #22 autorizado el 2026-10-25: Argon2id y contraseña de 6 a 100 puntos de código Unicode.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
@@ -7,20 +9,6 @@
 **Alcance:** CU-01/#6 y CU-02/#5 en la rama actual y un PR. P-01/P-02 confirmadas el 2026-10-23; [TASKS.md](TASKS.md) aprobado e implementación autorizada explícitamente el mismo día.
 
 **Ajuste autorizado, 2026-10-30:** `RegistrationRequest.firstName/lastName` conservan `@NotBlank` y usan `@Size(min = 2, max = 50)`. CA-02 se verifica por HTTP: un carácter rechazado sin alta, dos y cincuenta aceptados, cincuenta y uno rechazados. Sin nuevos tipos, migraciones, normalización de nombres ni cambios de login/JWT; la validación del perfil previa al hold permanece para cuentas existentes incompatibles.
-
-<!-- PARA LA PERSONA
-Este PLAN desarrolla la solución técnica de la SPEC aprobada. Su aprobación
-es independiente; después se derivan TASKS y se solicita implementar.
--->
-
-<!-- PARA EL AGENTE
-- Conservar decisiones de SPEC y distinguir propuestas técnicas de acuerdos.
-- Seguir hexagonal-arch y las reglas SDD de AGENTS.md, sin capas vacías.
-- Referenciar RF/CA sin repetirlos. Consultar cambios de comportamiento.
-- Conservar comentarios. No aprobar ni implementar por inferencia.
-- Para cambios sustanciales posteriores a aprobación: nota breve de fecha,
-  cambio, motivo e impacto; revisar la confirmación afectada, sin otro historial.
--->
 
 ## Contexto técnico verificado
 

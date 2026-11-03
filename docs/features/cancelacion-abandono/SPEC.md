@@ -1,32 +1,17 @@
 # SPEC: Cancelar reservas y abandonar procesos propios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Cancelación sustituida por la [Etapa 4 de simplificación](../simplificacion-reservas/PLAN.md): intención mínima, sin retryVersion ni presupuesto durable por ciclos.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
+**Ajuste posterior aprobado, 2026-11-02:** El máximo de tres intentos cuenta las reclamaciones para POST de cancelación de una reserva confirmada, incluidos los interrumpidos cuyo efecto se desconoce. Las consultas y esperas no consumen ese presupuesto. Se conservan intención durable, reintento explícito, propiedad, reconciliación antes de repetir y cierre seguro del abandono. Confirmado y autorizado a implementar durante la revisión de simplificación. RF/CA vigentes conservados; solución y regresión en PLAN/TASKS.
+
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Revisión:** 2026-11-02. SPEC conjunta para [#13/CU-08](https://github.com/prog2-perassiferrara/backend-turnos/issues/13) y [#15/CU-10](https://github.com/prog2-perassiferrara/backend-turnos/issues/15), aprobada explícitamente por el usuario, con alcance de cancelación de confirmadas y abandono con vencimiento/reconciliación confirmado el 2026-11-02. Ambos casos mantienen sus objetivos y trazabilidad separados; la autorización y el avance de implementación constan en [TASKS.md](TASKS.md).
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo según el enunciado y los contratos del backend.
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución.
--->
-
-<!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto y los contratos pertinentes. Inspecciona el
-  repositorio para comprobar el comportamiento actual.
-- Completa esta spec con la persona: investiga lo comprobable y consulta las
-  decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
-- No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
-  confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Considera errores, concurrencia, integración y recuperación cuando apliquen,
-  sin ampliar el alcance automáticamente.
-- No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
-  esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
-- Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
-- Un documento completo no está aprobado automáticamente. Solicita aprobación
-  antes de marcarlo como Aprobada. No implementes durante esta etapa.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Qué construimos y para quién
 

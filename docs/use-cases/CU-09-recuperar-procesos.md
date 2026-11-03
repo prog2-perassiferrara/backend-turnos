@@ -27,7 +27,7 @@
 ## Flujos alternativos y de excepción
 
 - **2a. Cátedra no disponible:** mantiene el progreso y la necesidad de recuperación; no descarta operaciones ni declara éxito.
-- **2b. Creación sin IDs recuperables:** aplica el criterio docente de abandonar ese intento y consultar ocupaciones: HELD exige esperar su expiresAt y reconsultar, CONFIRMED impide crear y libre permite un intento acotado sujeto a 409. No atribuye propiedad ni libera por diez minutos locales. Otras operaciones con información insuficiente conservan incertidumbre; una lista vacía no prueba que el efecto anterior nunca ocurrió.
+- **2b. Creación interrumpida sin IDs recuperables:** archiva solo el intento local, sin crear otro hold durante recovery. Un nuevo inicio mediante CU-04 exige consultar ocupaciones: HELD obliga esperar su expiresAt y reconsultar, CONFIRMED impide crear y libre permite un intento acotado sujeto a 409. No atribuye propiedad ni libera por diez minutos locales. Otras operaciones con información insuficiente conservan incertidumbre; una lista vacía no prueba que el efecto anterior nunca ocurrió.
 - **2c. Confirmación o cancelación central verificada:** actualiza el estado sin crear otra reserva ni volver a enviar pasos ya completados.
 - **2d. REST informa `HOLD_EXPIRED` o Kafka entrega `AppointmentProcessExpired`:** cierra el proceso local y evita nuevas confirmaciones.
 - **3a. Plazo vencido con operación en curso de resultado desconocido:** no inicia nuevos pasos; mantiene la necesidad de determinar el resultado central.
@@ -50,4 +50,4 @@
 
 **Fuentes:** [enunciado, sección 8](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 15.1 y 18](../../../INTEGRATION_REFERENCE-v2.md); [aclaración sobre creación incierta](../../../dudas_Slack.md#duda-18-resuelta).
 
-**Decisión contractual y pendiente de PLAN:** no hay consulta de holds ni idempotencia central para recuperar IDs perdidos. Se aplica el criterio docente de ocupaciones y nuevos intentos acotados; no se inventa recuperación de propiedad. El PLAN de este CU precisará la recuperación restante de operaciones interrumpidas y confirmaciones conocidas.
+**Contrato vigente:** [recuperación e incertidumbre](../ARQUITECTURA.md#recovery-cancelación-y-límites-operativos). No hay consulta de holds ni idempotencia central para recuperar IDs perdidos. Los checkpoints inciertos se reconcilian, sin rescatar commits como éxito inmediato ni repetir confirmaciones a ciegas.

@@ -1,5 +1,15 @@
 # TASKS: Cancelar reservas y abandonar procesos propios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Cancelación sustituida por la [Etapa 4 de simplificación](../simplificacion-reservas/PLAN.md): intención mínima, sin retryVersion ni presupuesto durable por ciclos.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
+**Ajuste posterior autorizado:** aplicar las decisiones de simplificación del [PLAN](PLAN.md) y su [SPEC](SPEC.md); la evidencia anterior corresponde a la implementación previa. La validación nueva se registra en el cierre de simplificación de recuperación.
+
+
 **Referencias:** [SPEC aprobada](SPEC.md), [PLAN aprobado](PLAN.md), [#13/CU-08](https://github.com/prog2-perassiferrara/backend-turnos/issues/13) y [#15/CU-10](https://github.com/prog2-perassiferrara/backend-turnos/issues/15).
 **Estado:** Implementación y validación local completas, incluida la precisión temporal. Inicio y abandono reales verificados; cancelación real de una confirmada bloqueada por falta de la solicitud central de teléfono.
 **Aprobaciones:** SPEC y PLAN aprobados explícitamente el 2026-11-01. TASKS aprobadas explícitamente el 2026-11-01.

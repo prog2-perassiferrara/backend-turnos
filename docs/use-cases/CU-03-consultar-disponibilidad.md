@@ -50,4 +50,4 @@
 
 **Fuentes:** [enunciado, secciones 4.2 y 7](../../../PROJECT_STATEMENT-v1.md); [anexo, secciones 4 y 8](../../../INTEGRATION_REFERENCE-v2.md); [CU-05 de Catálogo](../../../backend-catalogo/docs/use-cases/CU-05-consultar-agenda-vigente.md).
 
-**Pendiente para la SPEC:** límites de fechas y tratamiento de horarios ya pasados, sin inventar restricciones centrales no documentadas.
+**Contrato vigente:** [consulta de disponibilidad](../CONTRATOS.md#api-propia-de-turnos), desde hoy sin máximo futuro adicional y excluyendo horarios iniciados, según la zona de atención.

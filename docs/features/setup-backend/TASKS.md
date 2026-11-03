@@ -1,5 +1,7 @@
 # TASKS: Inicializar backend de Turnos y reservas
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Referencias:** [SPEC](SPEC.md), [PLAN](PLAN.md).
 **Autorización:** 2026-10-09, setup equivalente al de Catálogo; sin commits, push ni merge.
 **Estado:** Implementado y validado localmente; publicación e integración del PR pendientes.

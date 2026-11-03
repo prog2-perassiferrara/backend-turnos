@@ -1,5 +1,12 @@
 # TASKS: Completar teléfono y consultar progreso de reserva
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
 **Referencias:** [SPEC aprobada](SPEC.md), [PLAN aprobado](PLAN.md), #10/CU-05 y #11/CU-06.
 **Estado:** Implementación y validación local completas.
 **Aprobaciones:** SPEC y PLAN aprobados explícitamente el 2026-10-31. TASKS aprobadas explícitamente el 2026-10-31.

@@ -1,22 +1,14 @@
 # PLAN: Acceso técnico y configuración de cátedra para Turnos
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Ciclo de vida actualizado el 2026-11-02 por la [simplificación, Etapa 2](../simplificacion-reservas/PLAN.md#etapa-2-acceso-técnico-mínimo): adquisición al arrancar y acceso en memoria, sin recuperación asíncrona propia. Este documento conserva las decisiones originales como antecedente.
+
+
 **SPEC de referencia:** [SPEC.md](SPEC.md), aprobada el 2026-10-17, con D-01 = 1B y D-02 = 2A.
 **Versión de la spec revisada:** aprobación explícita del usuario el 2026-10-17.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** confirmada explícitamente por el usuario el 2026-10-17, tras aclarar el flujo entre clases. Permitió derivar TASKS; la autorización posterior de implementación y sus evidencias se registran en [TASKS.md](TASKS.md).
-
-<!-- PARA LA PERSONA
-Este documento contiene la solución técnica revisada; su ejecución se deriva en TASKS.
-Su aprobación no autoriza por sí sola a implementar.
--->
-
-<!-- PARA EL AGENTE
-- Leer SPEC aprobada, instrucciones y contratos; Mobile Guidelines no corresponde.
-- Conservar las decisiones funcionales; señalar propuestas técnicas sin aprobarlas por inferencia.
-- Aplicar hexagonal-arch y test-design-first, con componentes necesarios y pruebas de comportamiento.
-- Mantener Javadoc en español y DI por constructor, sin @Autowired ni Lombok @Data.
-- Implementar solo tras autorización explícita; no modificar otros repositorios ni ejecutar operaciones Git mutables.
--->
 
 ## Contexto técnico verificado
 

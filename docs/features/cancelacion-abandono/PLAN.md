@@ -1,33 +1,19 @@
 # PLAN: Cancelar reservas y abandonar procesos propios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Cancelación sustituida por la [Etapa 4 de simplificación](../simplificacion-reservas/PLAN.md): intención mínima, sin retryVersion ni presupuesto durable por ciclos.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
+**Ajuste posterior aprobado, 2026-11-02:** Simplificación autorizada: el presupuesto de tres intentos cuenta únicamente reclamaciones para POST de cancelación de una reserva confirmada. Las consultas y esperas no consumen ese presupuesto. Un único coordinador recupera procesos y cancelaciones; teléfono mantiene su publicador independiente. Se conservan intención durable, retryVersion explícito, propiedad, reconciliación antes de repetir y cierre seguro del abandono. Confirmado y autorizado a implementar por el usuario en la revisión de simplificación. RF/CA vigentes conservados; se revalidan las transiciones, recuperación, concurrencia y migraciones afectadas.
+
+
 **SPEC de referencia:** [SPEC.md](SPEC.md)
 **Versión de la spec revisada:** 2026-11-02, aprobada explícitamente; D-02 confirmada durante esta planificación.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** 2026-11-01, explícita del usuario. La autorización y el avance de implementación constan en [TASKS.md](TASKS.md).
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
-Este documento define la solución técnica. Una vez revisado, el agente puede
-derivar TASKS.md con tareas, dependencias y comprobaciones.
--->
-
-<!-- PARA EL AGENTE
-- Lee la SPEC.md aprobada, las instrucciones del proyecto y los contratos pertinentes.
-  Si falta un documento necesario o la spec no está aprobada, indícalo antes de avanzar.
-- Inspecciona el repositorio. Referencia rutas verificadas y distingue las nuevas propuestas.
-- Propón una solución proporcional al alcance y coherente con el proyecto.
-  Reutiliza lo existente y justifica nuevas dependencias o cambios de arquitectura.
-- Distingue hechos, decisiones confirmadas y propuestas. Consulta las decisiones
-  no resueltas; haz pocas preguntas por vez y actualiza el plan con las respuestas.
-- Referencia los requisitos y criterios por su ID, sin copiar toda la spec.
-- Si una decisión cambia el comportamiento o alcance, vuelve a la spec y solicita
-  confirmación. No resuelvas una duda de producto mediante una suposición técnica.
-- Conserva estos comentarios. No implementes durante la planificación.
-- Solicita aprobación antes de marcar el plan como Aprobado. La autorización
-  para implementar debe ser explícita; no se deduce del estado de los documentos.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Contexto técnico verificado
 
@@ -39,7 +25,7 @@ Rutas de la tabla relativas a `src/main/java/com/prog2/appointment/`, salvo indi
 
 | Componente o archivo existente | Ruta verificada | Responsabilidad y uso previsto |
 | --- | --- | --- |
-| Proceso y reglas | `reservation/domain/model/ReservationProcess.java` | Agregado inmutable con fase, IDs, `closedAt`, versión y `abandonmentPending`. Ya acepta cancelación recibida y conserva confirmación concurrente. Falta solicitarla. |
+| Proceso y reglas | `reservation/domain/model/ReservationProcess.java` | Agregado inmutable con fase, IDs, `closedAt` y `abandonmentPending`; la versión optimista queda en JPA. Ya acepta cancelación recibida y conserva confirmación concurrente. Falta solicitarla. |
 | Persistencia | `reservation/domain/ports/out/ReservationProcessRepository.java`, `reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java`, `reservation/infrastructure/persistence/service/TransactionalReservationStore.java` | Escrituras verificables tras commit, control optimista, inbox y cierre de teléfonos en transacciones locales. Reutilizar, sin HTTP dentro de ellas. |
 | Lectura central | `reservation/domain/ports/out/CentralAppointmentGateway.java`, `reservation/infrastructure/client/adapter/WebClientCentralAppointmentAdapter.java` | `find` consulta una página propia por paciente/fecha; ausencia inconclusa. No existe consulta directa de holds. |
 | Teléfono y eventos | `reservation/infrastructure/messaging/PhoneSubmissionDispatcher.java`, `ReservationActionParser.java` en el mismo paquete | Outbox, productor y consumidor existentes; falta impedir publicación tras aceptar abandono. El parser ya reconoce `AppointmentCancelled`. |
@@ -58,9 +44,9 @@ Mantener todo en `reservation`. Añadir progreso opcional de cancelación al pro
 
 1. Dos casos de uso conservan las entradas de CU-08 y CU-10. Ambos solicitan al repositorio una aceptación atómica con propietario, modalidad y referencia local; el abandono cierra también la publicación pendiente y mantiene la exclusión del proceso de creación cuando corresponda.
 2. Solo una aceptación nueva, o un reintento explícito nuevo, habilita ejecución inmediata. Una repetición devuelve el progreso actual, sin reiniciar presupuesto. Las consultas tampoco inician otro ciclo.
-3. Un caso de recuperación compartido espera hasta expiresAt para los abandonos pendientes; cuando corresponde, reclama un intento durable y ejecuta como máximo una lectura central y un POST por intento, reservado exclusivamente a una fase CONFIRMED, fuera de SQL. Antes de repetir un efecto consulta evidencia con los IDs conservados; un `CANCELLED` válido evita otro POST. Una ausencia no prueba cierre: repetir la cancelación del mismo ID se apoya en su idempotencia contractual.
+3. El caso de recuperación consulta evidencia para abandonos pendientes y para efectos anteriores; esas lecturas no consumen intentos. Solo después, sobre CONFIRMED, reclama durablemente un intento y ejecuta como máximo un POST fuera de SQL. Antes de repetir un efecto consulta evidencia con los IDs conservados; un `CANCELLED` válido evita otro POST. Una ausencia no prueba cierre: repetir la cancelación del mismo ID se apoya en su idempotencia contractual.
 4. Respuesta REST, consulta o evento actualizan la última versión del proceso y resuelven la intención cuando existe evidencia suficiente. Una confirmación durante el abandono mantiene la intención; no requiere una segunda autorización.
-5. Un dispatcher recupera los pendientes tras cortes/reinicios sin KMP abierto, con un máximo de tres intentos por ciclo. Al agotarlos se detiene; el propietario puede pedir otro ciclo explícitamente con la versión de reintento observada.
+5. El coordinador general recupera los pendientes tras cortes/reinicios sin KMP abierto, con un máximo de tres reclamaciones de POST por ciclo. Al agotarlas continúa consultando sin nuevos POST; el propietario puede pedir otro ciclo explícitamente con la versión de reintento observada.
 
 Diagrama de clases centrado en los contratos afectados. Las clases de cancelación son propuestas; los repositorios/adaptadores de lectura ya existen. Se omiten DTO y entidades del diagrama para conservar legibilidad.
 
@@ -94,7 +80,7 @@ classDiagram
     AbandonReservationUseCaseImpl --> ReservationProcessRepository
     CancelReservationUseCaseImpl --> RecoverReservationCancellationsUseCase
     AbandonReservationUseCaseImpl --> RecoverReservationCancellationsUseCase
-    CancellationDispatcher --> RecoverReservationCancellationsUseCase
+    RecoverReservationProcessesUseCaseImpl --> RecoverReservationCancellationsUseCase
     RecoverReservationCancellationsUseCaseImpl --> ReservationProcessRepository
     RecoverReservationCancellationsUseCaseImpl --> CentralAppointmentGateway
     RecoverReservationCancellationsUseCaseImpl --> ReservationCancellationGateway
@@ -155,7 +141,7 @@ Rutas propuestas bajo `src/main/java/com/prog2/appointment/reservation/`, except
 | `StartReservationUseCaseImpl`, publicación de teléfono y transiciones relacionadas | Modificar | Comprobar abandono antes de iniciar otro paso. Cerrar outbox al aceptarlo, respetando el envío que ya estaba en curso. | RF-03, RF-04 |
 | `GetReservationProcessUseCaseImpl`, listado, mapper y DTO públicos | Modificar | Incluir cancelación y acciones; permitir reconciliar una confirmada con cancelación pendiente, sin POST desde consultas. | RF-06, RF-08 |
 | `ReservationController`, body de reintento en `infrastructure/web/dto/`, errores existentes | Modificar / crear | Dos rutas, propietario desde JWT, reintento explícito versionado y respuestas seguras. | RF-01 a RF-03, RF-05, RF-08 |
-| `infrastructure/scheduling/CancellationDispatcher.java`, `ReservationConfiguration`, `application.yaml` | Crear / modificar | Worker de recuperación REST y scheduling con dos hilos para que no bloquee la publicación de teléfonos. | RF-04, RF-05, RF-07 |
+| `infrastructure/scheduling/ReservationRecoveryDispatcher.java`, `ReservationConfiguration`, `application.yaml` | Crear / modificar | Worker de recuperación REST y scheduling con dos hilos para que no bloquee la publicación de teléfonos. | RF-04, RF-05, RF-07 |
 | `src/main/resources/db/migration/V6__add_reservation_cancellation.sql` | Crear | Columnas e índice de progreso en `reservation_process`; sin modificar migraciones previas. | RF-05, RF-08 |
 | Pruebas de cancelación y soporte existente; `README.md` | Crear / modificar | Contrato propio, persistencia, carreras, límites y ejecución verificables. | RF-01 a RF-08 |
 
@@ -181,10 +167,10 @@ Referencia RF/CA y completa solo los puntos pertinentes al backend. -->
 - **Estado del servicio y de las operaciones:** CU-08 exige confirmada o reconoce ya cancelada; CU-10 acepta pendiente con IDs y cubre la confirmación concurrente. Sobre vencido/fallido verificado, CU-10 devuelve el resultado sin nueva intención. Sin IDs conocidos se rechaza la acción, conservando CU-04. El progreso de cancelación no hace pasar `PHONE_PENDING` por una reserva confirmada ni habilita teléfono. El GET individual puede reconciliar intenciones no resueltas, también rechazadas, aunque la fase ya sea `CONFIRMED`; conserva su política de lectura acotada y nunca ejecuta el POST de cancelación.
 - **Conservación y restauración del estado:** aceptar abandono y cerrar la respuesta activa de teléfono en una sola transacción. Reutilizar `@Version`, `write_id` y verificación posterior del adapter; sin commit acreditado no hay efecto central nuevo. Cambios de inbox, consulta y cancelación resuelven intención/outbox con el estado del proceso en la misma transacción. Al reiniciar se conserva contador y fecha; el dispatcher no necesita al usuario conectado.
 - **Ejecución, concurrencia y cancelación de operaciones:** reclamar cada intento mediante una actualización optimista verificable, antes de HTTP; solo quien acredita la reclamación puede ejecutarlo. Guardar contador, versión de ciclo y próxima fecha antes de salir de SQL. No HTTP bajo locks ni transacciones. Antes de confirmar inicialmente o reclamar una publicación, comprobar el abandono; cerrar outbox no retira un mensaje ya enviado. Los errores/ACK de una ejecución anterior no sobrescriben otro ciclo o un resultado final. Una evidencia `CANCELLED` válida sí puede resolver la intención aunque llegue desde un intento anterior.
-- **Errores, reintentos y prevención de duplicados:** D-02 fija tres intentos por ciclo, incluidos los interrumpidos después de reclamar, nunca un bucle abierto. Usar `retryDelay` existente entre intentos y `preparationCooldown` antes del reintento explícito. La reserva confirmada no tiene un TTL que permita reiniciar automáticamente el ciclo; tampoco se corta una cancelación incierta solo por `expiresAt`. Un abandono no confirmado se agenda para expiresAt sin consumir intentos ni acceder al POST. Si está HELD, WAITING_FOR_REQUEST o WAITING_FOR_PHONE, no hay ninguna respuesta telefónica registrada y ya venció el plazo central, se cierra localmente como EXPIRED con intención resuelta. Los estados inciertos o con cualquier teléfono registrado requieren lectura/evento; cada verificación consume presupuesto y una ausencia mantiene pendiente. Si aparece CONFIRMED, la intención habilita el POST. Primera ejecución nueva sobre una confirmada puede ir directamente al POST; después de una reclamación previa o de un reintento explícito, consultar primero. Si la lectura falla, conservar pendiente y no emitir ese POST; si resulta inconclusa, el POST idempotente del mismo ID sigue siendo seguro, sin atribuir propiedad por ocupaciones.
-- **Rechazos y eventos concurrentes:** `404/RESERVATION_NOT_FOUND`, `403/RESERVATION_OWNER_MISMATCH`, `409/RESERVATION_NOT_CANCELLABLE` y validación central no acreditan liberación; guardar rechazo y detener repetición del mismo efecto sin nueva información. Si una confirmación nueva y correlacionada resuelve una carrera de abandono, reactivar la intención dentro del presupuesto restante, sin reiniciar su contador. Si esa confirmación se registró mientras se esperaba el POST, su rechazo posterior tampoco desactiva la recuperación: comparar la etapa reclamada con la última versión antes de registrar el fallo. Agotado el presupuesto, se mantiene el reintento explícito acordado. `HOLD_EXPIRED`/evento de expiración y fallo central válidos resuelven con su propio resultado. No relajar el parser por una supuesta variante de evento de hold: si no puede validarse, conservar el recibo según las reglas actuales y verificar por REST.
+- **Errores, reintentos y prevención de duplicados:** D-02 fija tres intentos por ciclo, incluidos los interrumpidos después de reclamar, nunca un bucle abierto. Usar `retryDelay` existente entre intentos y `preparationCooldown` antes del reintento explícito. La reserva confirmada no tiene un TTL que permita reiniciar automáticamente el ciclo; tampoco se corta una cancelación incierta solo por `expiresAt`. Un abandono no confirmado se revisa sin consumir intentos ni acceder al POST; el plazo central permite el cierre local solo en el caso seguro siguiente. Si está HELD, WAITING_FOR_REQUEST o WAITING_FOR_PHONE, no hay ninguna respuesta telefónica registrada y ya venció el plazo central, se cierra localmente como EXPIRED con intención resuelta. Los estados inciertos o con cualquier teléfono registrado requieren lectura/evento; las verificaciones no consumen presupuesto y una ausencia mantiene pendiente. Si aparece CONFIRMED, la intención habilita el POST. Primera ejecución nueva sobre una confirmada puede ir directamente al POST; después de una reclamación previa o de un reintento explícito, consultar primero. Si la lectura falla, conservar pendiente y no emitir ese POST; si resulta inconclusa, el POST idempotente del mismo ID sigue siendo seguro, sin atribuir propiedad por ocupaciones.
+- **Rechazos y eventos concurrentes:** `404/RESERVATION_NOT_FOUND`, `403/RESERVATION_OWNER_MISMATCH`, `409/RESERVATION_NOT_CANCELLABLE` y validación central no acreditan liberación; guardar rechazo y detener repetición del mismo efecto sin nueva información. Una confirmación correlacionada permite reclamar el siguiente POST dentro del presupuesto restante; el rechazo de una lectura no modifica ese presupuesto ni desactiva la intención. Agotado el presupuesto, se mantiene el reintento explícito acordado. `HOLD_EXPIRED`/evento de expiración y fallo central válidos resuelven con su propio resultado. No relajar el parser por una supuesta variante de evento de hold: si no puede validarse, conservar el recibo según las reglas actuales y verificar por REST.
 - **HTTP y errores propios:** mantener JWT, `problem+json`, `code` seguro y `no-store`; `400` por UUID/body/versión inválidos, `404` indistinto para ausente/ajeno, `409` por fase, IDs, modalidad o reintento no disponible, y `503` si no se acredita persistencia. Un rechazo funcional conservado se expone como `cancellation.status=REJECTED`, nunca como éxito de cancelación. Los rechazos de la identidad técnica no se traducen a un `401` del usuario: invalidar solo el token técnico utilizado y conservar progreso, sin repetir el POST dentro del adapter.
-- **Límites de ejecución:** un dispatcher periódico con `retryDelay` y lotes de diez, sin esperas activas. Reutilizar timeout HTTP de cinco segundos por defecto, hasta dos veces ese valor por petición como los clientes actuales. Al reclamar, reservar próxima ejecución al menos por el presupuesto de lectura más POST y la separación; al registrar el fallo, ajustar a la próxima fecha permitida. Tras el tercer intento no volver a seleccionarlo automáticamente. Las consultas pueden seguir obteniendo evidencia, sin reiniciar ni consumir otro ciclo de efectos.
+- **Límites de ejecución:** un dispatcher periódico con `retryDelay` y lotes de diez, sin esperas activas. Reutilizar timeout HTTP de cinco segundos por defecto, hasta dos veces ese valor por petición como los clientes actuales. Al reclamar, reservar próxima ejecución antes del POST por el presupuesto HTTP y la separación; al registrar el fallo, ajustar a la próxima fecha permitida. Tras el tercer intento no emitir más POST automáticamente. El coordinador sigue obteniendo evidencia mediante consultas, sin reiniciar ni consumir otro ciclo de efectos.
 - **Observabilidad y diagnósticos seguros:** registrar UUID local, operación, ciclo/intento y código clasificado. No imprimir payload, motivo libre, teléfono, JWT, perfil ni configuración técnica. Mantener offset después del commit y deduplicación por `eventId`; no alterar los eventos de teléfono ni prometer ejecución física exactamente una vez.
 
 ## Dependencias y configuración

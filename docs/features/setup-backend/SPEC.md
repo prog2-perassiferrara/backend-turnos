@@ -1,31 +1,10 @@
 # SPEC: Inicializar backend de Turnos y reservas
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 
 **Aprobación y autorización:** el 2026-10-09 el usuario autorizó aprobar y avanzar hasta implementar si el setup era equivalente al de Catálogo. La comparación no identificó cambios funcionales ni de stack; solo identidad, almacenamiento y puertos propios para coexistencia. Esta autorización cubre #3; CI se conserva como #17 separado.
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo según los requisitos del backend.
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución.
--->
-
-<!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto. Inspecciona el repositorio para comprobar
-  el comportamiento actual y evalúa los requisitos propios del backend.
-- Completa esta spec con la persona: investiga lo comprobable y consulta las
-  decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
-- No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
-  confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Evalúa conectividad, persistencia, seguridad y recuperación pertinentes al servicio,
-  sin ampliar el alcance automáticamente.
-- No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
-  esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
-- Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
-- Un documento completo no está aprobado automáticamente. Solicita aprobación
-  antes de marcarlo como Aprobada. No implementes durante esta etapa.
--->
 
 ## Qué construimos y para quién
 

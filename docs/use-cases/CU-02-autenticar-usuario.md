@@ -45,4 +45,4 @@
 
 **Fuente:** [enunciado, secciones 3.2 y 9](../../../PROJECT_STATEMENT-v1.md); [decisiones registradas](README.md).
 
-**Pendiente para la SPEC/PLAN:** completar el contrato compatible de autenticación, vigencia de sesión y mecanismo de firma y validación. No se presupone renovación automática del JWT.
+**Contrato vigente:** [seguridad y propiedad](../CONTRATOS.md#seguridad-y-propiedad), JWT RS256 de 24 horas o 30 días con recordarme; sin renovación automática.

@@ -21,7 +21,7 @@
 
 1. El usuario identifica su reserva y solicita cancelarla.
 2. Turnos verifica la propiedad y el estado conocido; conserva la intención de cancelación.
-3. Turnos solicita la cancelación central mediante el identificador del proceso.
+3. Turnos consulta evidencia central correlacionada y, si corresponde, solicita la cancelación mediante el identificador del proceso.
 4. Turnos recibe el resultado REST y/o Kafka y reconcilia ambos sin repetir efectos.
 5. Turnos persiste la cancelación y comunica al usuario el resultado verificado.
 
@@ -43,11 +43,10 @@
 - La cancelación central de una reserva ya cancelada es idempotente.
 - No requiere consultar Catálogo para utilizar los identificadores propios de la reserva.
 - Una cancelación verificada no garantiza que el horario siga disponible frente a otra operación concurrente.
-- Abandonar un proceso todavía pendiente se describe aparte en CU-10 por su objetivo y precondiciones. La cancelación central requiere una reserva confirmada según el anexo 13.1.
 - La confirmación termina la creación de la reserva, pero no impide una cancelación posterior autorizada. `CONFIRMED` a `CANCELLED` es una transición válida, no la reapertura del proceso de creación; una confirmación tardía no revierte una cancelación ya verificada.
 
 ## Fuentes y pendientes
 
 **Fuentes:** [anexo, secciones 12, 13.1 y 15.10](../../../INTEGRATION_REFERENCE-v2.md); [decisiones registradas](README.md).
 
-**Decisiones confirmadas:** sin motivo; intención pendiente diferenciada del resultado central y recuperación acotada según la SPEC conjunta.
+**Contrato vigente:** sin motivo, intención `PENDING` o `RETRY_REQUIRED`, hasta tres POST por ejecución con consulta previa y retry explícito por el mismo endpoint. No hay presupuesto exacto entre reinicios. Ver [cancelación y recovery](../ARQUITECTURA.md#recovery-cancelación-y-límites-operativos).

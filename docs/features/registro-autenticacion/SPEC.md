@@ -1,5 +1,7 @@
 # SPEC: Registro y autenticación de usuarios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Revisión:** 2026-10-30. Funcionalidad #6/#5, hashing y contraseña de #22, y mínimo de nombres para reservas #9.
 **Aprobación:** explícita del usuario el 2026-10-20 («apruebo spec»), con el ajuste siguiente confirmado el 2026-10-23. Las aprobaciones y la autorización de implementación posteriores constan en PLAN/TASKS.
@@ -9,21 +11,6 @@
 **Ajuste autorizado, 2026-10-25, [#22](https://github.com/prog2-perassiferrara/backend-turnos/issues/22):** migrar el hashing a Argon2id y aplicar entre 6 y 100 caracteres Unicode (puntos de código), incluidos espacios, en registro/login. Sustituye la restricción anterior de 72 bytes, sin truncar, recortar ni normalizar. Retirar manualmente las cuentas ficticias BCrypt y sus datos asociados, sin compatibilidad ni rehash automático; no borrar datos al arrancar. Se reutilizan estos documentos y la rama existente. Impacta RF-01/RF-03/RF-09 y CA-02/CA-04; conserva el contrato HTTP/JWT. El usuario autorizó explícitamente implementar esta migración; las aprobaciones originales se conservan.
 
 **Ajuste autorizado, 2026-10-30:** exigir nombre y apellido no blancos de 2 a 50 caracteres al registrar, para que el perfil nuevo cumpla el mínimo central de reservas conservando el máximo y los campos del contrato compatible con JHipster. Afecta RF-01 y CA-02; se actualizan validación y pruebas de límites. Se conservan cuentas existentes, autenticación y esquema. El usuario confirmó el cambio y autorizó implementarlo directamente.
-
-<!-- PARA LA PERSONA
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución. Esta funcionalidad es backend;
-MOBILE_GUIDELINES.md corresponde exclusivamente a KMP.
--->
-
-<!-- PARA EL AGENTE
-- Leer instrucciones, contratos y casos aprobados; verificar el estado real.
-- Consultar únicamente decisiones pendientes, sin trasladar aprobaciones.
-- No inventar requisitos ni atribuir propuestas propias a la cátedra.
-- Mantener diseño técnico y contratos HTTP concretos en PLAN.md.
-- Conservar secciones y comentarios; mantener documentación proporcional.
-- No aprobar ni implementar por inferencia.
--->
 
 ## Qué construimos y para quién
 

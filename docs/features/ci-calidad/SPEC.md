@@ -1,23 +1,11 @@
 # SPEC: CI y calidad con GitHub Actions y SonarQube Cloud
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Referencia:** [issue #17](https://github.com/prog2-perassiferrara/backend-turnos/issues/17).
 **Aprobación:** el 2026-10-10 el usuario confirmó el enfoque y luego eligió simplificarlo: CI solo para PR hacia `main` y pushes a `main`, agregando `edited` sin filtros adicionales. Los PR apilados son excepcionales y se validan localmente hasta cambiar su destino. La aprobación no se traslada al PLAN.
 **Alcance entre repositorios:** aplicar primero en Turnos; después, en Catálogo. KMP queda excluido. Todas las operaciones Git que modifican estado corresponden al usuario.
-
-<!-- PARA LA PERSONA
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza la ejecución. Revisar esta adaptación del enfoque de Catálogo.
--->
-
-<!-- PARA EL AGENTE
-- Leer las instrucciones, inspeccionar el repositorio y conservar las decisiones confirmadas.
-- Las Mobile Guidelines no corresponden a este backend.
-- Distinguir hechos, propuestas y pendientes; no inventar requisitos ni resultados.
-- Mantener comportamiento y aceptación aquí, diseño técnico en PLAN y evidencia en TASKS.
-- Conservar las secciones y comentarios con documentación proporcional.
-- No marcar documentos aprobados por inferencia ni implementar sin autorización.
--->
 
 ## Qué construimos y para quién
 

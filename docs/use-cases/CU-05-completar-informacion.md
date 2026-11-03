@@ -19,7 +19,7 @@
 
 ## Flujo principal
 
-1. Turnos recibe la solicitud, verifica su correspondencia y conserva el evento y su vencimiento.
+1. Turnos recibe la solicitud, verifica su correspondencia y conserva su identificador y vencimiento.
 2. Turnos hace consultable al propietario que se requiere un teléfono; KMP presenta la solicitud.
 3. El usuario autenticado envía el teléfono para su proceso.
 4. Turnos valida la entrada y verifica que el proceso permita continuar; conserva el envío y publica `AdditionalInformationSubmitted` correlacionado con la solicitud.
@@ -53,4 +53,4 @@
 
 **Fuente:** [anexo, secciones 15.1 y 15.4 a 15.9](../../../INTEGRATION_REFERENCE-v2.md); [decisiones registradas](README.md).
 
-**Pendiente para el PLAN:** transporte del estado a KMP, deduplicación y recuperación de envíos inciertos. No se presupone almacenamiento del teléfono como atributo permanente de la cuenta.
+**Contrato vigente:** [API y mensajes](../CONTRATOS.md), consulta HTTP del estado y [outbox/idempotencia](../ARQUITECTURA.md#atomicidad-concurrencia-e-idempotencia). El teléfono no es un atributo permanente de la cuenta.

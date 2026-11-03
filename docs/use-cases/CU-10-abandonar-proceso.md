@@ -1,6 +1,9 @@
 # CU-10. Abandonar proceso propio
 
-**Estado:** Revisado y aprobado por el usuario el 2026-10-07.
+> Alcance actualizado el 2026-11-02: [simplificación de reservas, Etapa 1](../features/simplificacion-reservas/SPEC.md). CU-06/07 pasan a lectura local; CU-10 queda retirado. El contenido anterior se conserva como antecedente.
+
+
+**Estado:** Retirado el 2026-11-02. Conserva como antecedente la aprobación histórica del 2026-10-07.
 
 ## Identificación
 
