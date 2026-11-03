@@ -160,6 +160,44 @@ class ReservationCancellationIntegrationTests {
         PROVIDERS.cancellationOverride.set(exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
     }
 
+    private void largeCentralHistory(ReservationProcess process) {
+        PROVIDERS.appointmentsOverride.set(exchange -> {
+            exchange.getResponseHeaders().set("X-Total-Count", "400");
+            exchange.getResponseHeaders().set("Link", "</next>; rel=\"next\"");
+            var rows = java.util.stream.IntStream.range(0, 100).mapToObj(index -> Map.of(
+                    "reservationId", 8251L + index,
+                    "reservationProcessId", index == 0 ? process.hold().centralProcessId() : "other-" + index,
+                    "externalPatientId", process.patient().externalPatientId(),
+                    "professionalId", process.selection().professionalId(),
+                    "appointmentDate", process.selection().date().minusDays(index).toString(),
+                    "startTime", process.selection().startTime().toString(), "status", "CONFIRMED")).toList();
+            TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(rows));
+        });
+    }
+
+    @Test
+    void cancellationUsesAnExactEarlyMatchWithoutReadingTheWholeCentralHistory() throws Exception {
+        var process = seed(true);
+        largeCentralHistory(process);
+        var response = request("POST", path(process, "cancel"), null, token);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(PROVIDERS.appointmentQueries).hasValue(1);
+        assertThat(PROVIDERS.cancellations).hasValue(1);
+    }
+
+    @Test
+    void recoveryUsesAnExactEarlyMatchWithoutReadingTheWholeCentralHistory() {
+        var process = seed(false);
+        largeCentralHistory(process);
+        clock.value.set(NOW.plusSeconds(31));
+        reviews.recoverDue();
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMED);
+        assertThat(PROVIDERS.appointmentQueries).hasValue(1);
+        assertThat(PROVIDERS.cancellations).hasValue(0);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
+    }
+
     private static ReservationAction phoneRequest(ReservationProcess process) {
         return new ReservationAction(ReservationActionType.PHONE_REQUESTED,
                 new ReservationAction.Correlation("request-1", process.hold().centralProcessId(),

@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Arrays;
 import java.util.HashSet;
 
-/** Lecturas puntuales y paginadas acotadas; ausencia de coincidencia nunca demuestra liberación. */
+/** Busca evidencia exacta en páginas válidas; no certifica el historial posterior a la coincidencia. */
 @RequiredArgsConstructor
 public final class WebClientCentralAppointmentAdapter implements CentralAppointmentGateway {
     private final WebClient client;
@@ -51,7 +51,8 @@ public final class WebClientCentralAppointmentAdapter implements CentralAppointm
                     return Optional.empty();
                 }
                 expectedTotal = total;
-                if (!result.hasNext()) return matches.values().stream().filter(value -> value.belongsTo(process)).findFirst();
+                var match = matches.values().stream().filter(value -> value.belongsTo(process)).findFirst();
+                if (match.isPresent() || !result.hasNext()) return match;
             }
             return Optional.empty();
         } catch (IllegalArgumentException _) {
