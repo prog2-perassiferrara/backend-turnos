@@ -171,12 +171,15 @@ public final class ReservationController {
      */
     @Operation(summary = "Consultar proceso propio", description = "JWT de usuario. Devuelve el progreso durable local del proceso propio, sin teléfono ni identificadores centrales.", tags = {"Reservas propias"})
     @ApiResponse(responseCode = "200", description = "Consulta exitosa.", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "400", description = "INVALID_RESERVATION_SELECTION: processId no es un UUID válido",
+            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                    schema = @Schema(ref = PROBLEM_SCHEMA)))
     @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_RESPONSE)
     @ApiResponse(responseCode = "403", ref = FORBIDDEN_RESPONSE)
     @ApiResponse(responseCode = "404", description = "RESERVATION_PROCESS_NOT_FOUND",
             content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
                     schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "503", description = "APPOINTMENT_STATUS_UNAVAILABLE o STORAGE_UNAVAILABLE",
+    @ApiResponse(responseCode = "503", description = "STORAGE_UNAVAILABLE",
             content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
                     schema = @Schema(ref = PROBLEM_SCHEMA)))
     @ApiResponse(responseCode = "500", description = "INTERNAL_ERROR",

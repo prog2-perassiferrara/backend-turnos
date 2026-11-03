@@ -112,7 +112,10 @@ class OpenApiHttpTests {
         assertThat(responseCodes(paths, "/api/reservation-processes", "post"))
                 .contains("200", "202", "400", "401", "403", "409", "503");
         assertThat(responseCodes(paths, "/api/reservation-processes/{processId}", "get"))
-                .contains("200", "401", "403", "404", "503");
+                .contains("200", "400", "401", "403", "404", "503");
+        assertThat(paths.path("/api/reservation-processes/{processId}").path("get")
+                .path("responses").path("503").path("description").asString())
+                .isEqualTo("STORAGE_UNAVAILABLE");
         assertThat(responseCodes(paths, "/api/reservation-processes/{processId}/phone", "post"))
                 .contains("200", "202", "400", "401", "403", "404", "409", "503");
         assertThat(responseCodes(paths, "/api/reservation-processes/{processId}/cancel", "post"))
