@@ -534,6 +534,23 @@ class UserHttpTests {
     }
 
     @Test
+    void anUnrelatedReadCommitCannotConsumeTheRegistrationFailure() throws Exception {
+        faults.commit.set(UserFailureConfiguration.CommitFailure.AFTER);
+        try (var connection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("SELECT COUNT(*) FROM app_user");
+                    var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getLong(1)).isZero();
+            }
+            connection.commit();
+        }
+        assertProblem(register(profile("patient", "patient@example.test")),
+                503, "USER_REGISTRATION_UNAVAILABLE");
+        assertThat(count("app_user")).isEqualTo(1);
+    }
+
+    @Test
     void lostCommitResponseRetainsAccountAndRepeatDoesNotAuthenticateByExistence() throws IOException, InterruptedException {
         faults.commit.set(UserFailureConfiguration.CommitFailure.AFTER);
         assertProblem(

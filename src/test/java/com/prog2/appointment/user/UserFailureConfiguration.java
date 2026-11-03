@@ -4,6 +4,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
@@ -80,9 +81,15 @@ public class UserFailureConfiguration {
                 throw new SQLException("Fictional database outage", "08006");
             }
             Connection actual = super.getConnection();
+            var createsUser = new AtomicBoolean();
             return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
                     new Class<?>[]{Connection.class}, (_, method, arguments) -> {
-                        var mode = "commit".equals(method.getName())
+                        if ("prepareStatement".equals(method.getName())
+                                && arguments[0].toString().toLowerCase(Locale.ROOT).startsWith("insert into app_user ")) {
+                            createsUser.set(true);
+                        }
+                        // Las lecturas periódicas no deben consumir el fallo destinado al alta.
+                        var mode = "commit".equals(method.getName()) && createsUser.get()
                                 ? faults.commit.getAndSet(CommitFailure.NONE) : CommitFailure.NONE;
                         if (mode == CommitFailure.BEFORE) {
                             throw new SQLException("Fictional failure before commit", "08006");

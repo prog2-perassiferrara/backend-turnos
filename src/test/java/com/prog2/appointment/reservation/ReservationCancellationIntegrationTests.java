@@ -307,7 +307,10 @@ class ReservationCancellationIntegrationTests {
     @Test
     void automaticRetriesStopAndConcurrentExplicitRetriesNeedNoVersion() throws Exception {
         var process = seed(true); unavailable();
-        request("POST", path(process, "cancel"), null, token);
+        // El ciclo de tres GET/POST puede superar el plazo HTTP del cliente del test.
+        // Prepararlo por sus puertos conserva el recorrido HTTP para los retries concurrentes.
+        repository.requestCancellation(owner, process.id(), clock.instant());
+        recover.recover(process.id());
         assertThat(repository.find(process.id()).orElseThrow().cancellation()).isEqualTo(CancellationState.RETRY_REQUIRED);
         for (int i = 1; i <= 2; i++) {
             clock.value.set(NOW.plusSeconds(i * 3601L)); reviews.recoverDue();
@@ -318,12 +321,27 @@ class ReservationCancellationIntegrationTests {
         assertThat(cancellation.path("canRetry").asBoolean()).isTrue();
         assertThat(cancellation.has("retryVersion")).isFalse();
         assertThat(cancellation.has("requestedAt")).isFalse();
-        PROVIDERS.cancellationOverride.set(null);
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var sent = new CountDownLatch(1);
+        PROVIDERS.cancellationOverride.set(exchange -> {
+            faults.arm(CommitFaultDataSource.Mode.BLOCK, "update reservation_process", 1);
+            sent.countDown();
+            TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(Map.of(
+                    "reservationId", process.reservationId(), "reservationProcessId", process.hold().centralProcessId(),
+                    "status", "CANCELLED", "cancelledAt", NOW.toString())));
+        });
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
             var first = executor.submit(() -> request("POST", path(process, "cancel"), null, token));
+            assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(faults.entered.get().await(5, TimeUnit.SECONDS)).isTrue();
             var second = executor.submit(() -> request("POST", path(process, "cancel"), null, token));
-            assertThat(first.get(10, TimeUnit.SECONDS).statusCode()).isIn(200, 202);
-            assertThat(second.get(10, TimeUnit.SECONDS).statusCode()).isIn(200, 202);
+            assertThat(second.get(10, TimeUnit.SECONDS).statusCode()).isEqualTo(202);
+            faults.release.get().countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        } finally {
+            // Liberar el commit antes de esperar tareas, también si falla una aserción.
+            faults.clear();
+            executor.close();
         }
         assertThat(PROVIDERS.cancellations).hasValue(4);
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
