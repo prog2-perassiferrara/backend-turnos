@@ -10,6 +10,7 @@ import com.prog2.appointment.reservation.domain.exception.*;
 import com.prog2.appointment.reservation.domain.model.*;
 import com.prog2.appointment.reservation.domain.ports.out.*;
 import com.prog2.appointment.reservation.infrastructure.messaging.*;
+import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
 
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.*;
@@ -26,6 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.*;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.*;
 
 import tools.jackson.databind.JsonNode;
@@ -45,6 +47,9 @@ import java.util.function.Consumer;
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ReservationPhoneIntegrationTests.Settings.class)
+// El recovery REST tiene pruebas propias; no debe contaminar contadores de estas consultas locales.
+// La preparación del canal y el publicador del outbox siguen ejecutándose con SQL y Kafka reales.
+@MockitoBean(types = RecoverReservationProcessesUseCase.class)
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ExtendWith(OutputCaptureExtension.class)
