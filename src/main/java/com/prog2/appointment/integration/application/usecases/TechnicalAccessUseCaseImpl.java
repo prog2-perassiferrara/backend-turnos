@@ -2,6 +2,7 @@ package com.prog2.appointment.integration.application.usecases;
 
 import lombok.RequiredArgsConstructor;
 import java.time.Clock;
+import java.util.concurrent.atomic.AtomicReference;
 import com.prog2.appointment.integration.application.exception.TechnicalAccessUnavailableException;
 import com.prog2.appointment.integration.domain.enums.AccessFailure;
 import com.prog2.appointment.integration.domain.exception.IntegrationGatewayException;
@@ -18,7 +19,7 @@ public final class TechnicalAccessUseCaseImpl implements TechnicalAccessUseCase 
     private final CentralIntegrationGateway central;
     private final Clock clock;
     private final String expectedGroup;
-    private volatile TechnicalAccess current;
+    private final AtomicReference<TechnicalAccess> current = new AtomicReference<>();
 
     /**
      * Inicializa una vez desde el arranque: hasta tres intentos de GET ante fallos recuperables.
@@ -40,7 +41,7 @@ public final class TechnicalAccessUseCaseImpl implements TechnicalAccessUseCase 
                 if (!token.isUsableAt(clock.instant())) {
                     throw new IntegrationGatewayException(AccessFailure.CENTRAL_TOKEN_REJECTED);
                 }
-                current = new TechnicalAccess(token, configuration);
+                current.set(new TechnicalAccess(token, configuration));
                 LOG.log(System.Logger.Level.INFO, "Technical access available");
                 return;
             } catch (IntegrationGatewayException failure) {
@@ -52,7 +53,7 @@ public final class TechnicalAccessUseCaseImpl implements TechnicalAccessUseCase 
 
     @Override
     public TechnicalAccess getAccess() {
-        var access = current;
+        var access = current.get();
         if (access == null || !access.token().isUsableAt(clock.instant())) {
             throw new TechnicalAccessUnavailableException();
         }
@@ -61,7 +62,8 @@ public final class TechnicalAccessUseCaseImpl implements TechnicalAccessUseCase 
 
     @Override
     public void rejectAccess(String rejectedToken) {
-        var access = current;
-        if (access != null && access.token().value().equals(rejectedToken)) current = null;
+        var access = current.get();
+        // No borrar un acceso distinto que se haya publicado después de esta lectura.
+        if (access != null && access.token().value().equals(rejectedToken)) current.compareAndSet(access, null);
     }
 }

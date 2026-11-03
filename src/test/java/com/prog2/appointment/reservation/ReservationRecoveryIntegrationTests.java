@@ -166,8 +166,9 @@ class ReservationRecoveryIntegrationTests {
     @EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
     void aConfirmationCommitErrorNeverGrantsPermissionEvenIfItPersisted(CommitFaultDataSource.Mode mode) {
         var process = save(candidate(true));
+        var processId = process.id();
         faults.arm(mode, "update reservation_process", 1);
-        assertThatThrownBy(() -> repository.beginInitialConfirmation(process.id(), NOW))
+        assertThatThrownBy(() -> repository.beginInitialConfirmation(processId, NOW))
                 .isInstanceOf(ReservationStorageException.class);
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(
                 mode == CommitFaultDataSource.Mode.AFTER ? ReservationPhase.CONFIRMATION_PENDING : ReservationPhase.HELD);
@@ -181,9 +182,10 @@ class ReservationRecoveryIntegrationTests {
     void recoveryReadsThePersistedHoldCheckpointWithoutRepeatingCreation(CommitFaultDataSource.Mode mode) {
         var process = save(candidate(false));
         var hold = holds.create(process);
+        var processId = process.id();
         assertThat(PROVIDERS.creates).hasValue(1);
         faults.arm(mode, "update reservation_process", 1);
-        assertThatThrownBy(() -> repository.update(process.id(), value -> value.acceptHold(hold)))
+        assertThatThrownBy(() -> repository.update(processId, value -> value.acceptHold(hold)))
                 .isInstanceOf(ReservationStorageException.class);
         assertThat(PROVIDERS.confirmations).hasValue(0);
         var durable = repository.find(process.id()).orElseThrow();
@@ -207,8 +209,9 @@ class ReservationRecoveryIntegrationTests {
     @Test
     void anAmbiguousConfirmationCheckpointIsReconciledWithoutPostingAgain() {
         var process = save(candidate(true));
+        var processId = process.id();
         faults.arm(CommitFaultDataSource.Mode.AFTER, "update reservation_process", 1);
-        assertThatThrownBy(() -> repository.beginInitialConfirmation(process.id(), NOW))
+        assertThatThrownBy(() -> repository.beginInitialConfirmation(processId, NOW))
                 .isInstanceOf(ReservationStorageException.class);
         faults.clear(); clock.value.set(NOW.plusSeconds(31));
         recover.recoverDue();
@@ -566,8 +569,8 @@ class ReservationRecoveryIntegrationTests {
                 .containsEntry("hold_id", pending.hold().holdId())
                 .containsEntry("central_process_id", pending.hold().centralProcessId())
                 .containsEntry("cancellation_status", null)
-                .containsEntry("active_owner_id", phase == ReservationPhase.CONFIRMED ? null : owner);
-        assertThat(row).doesNotContainKeys("abandonment_pending", "cancellation_kind");
+                .containsEntry("active_owner_id", phase == ReservationPhase.CONFIRMED ? null : owner)
+                .doesNotContainKeys("abandonment_pending", "cancellation_kind");
         java.time.LocalDateTime expiry = old.queryForObject("SELECT expires_at FROM reservation_process WHERE id=?",
                 (result, rowNumber) -> result.getObject(1, java.time.LocalDateTime.class), pending.id().toString());
         assertThat(expiry).isEqualTo(java.time.LocalDateTime.ofInstant(pending.hold().expiresAt(), java.time.ZoneOffset.UTC));

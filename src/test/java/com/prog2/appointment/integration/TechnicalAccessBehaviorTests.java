@@ -35,6 +35,7 @@ class TechnicalAccessBehaviorTests {
         assertThatThrownBy(service::getAccess).isInstanceOf(TechnicalAccessUnavailableException.class);
         service.initialize();
         var first = service.getAccess();
+        service.rejectAccess("fictional-other-token");
         assertThat(service.getAccess()).isSameAs(first);
         assertThat(fetched).hasValue(1);
         assertThat(configured).hasValue(1);

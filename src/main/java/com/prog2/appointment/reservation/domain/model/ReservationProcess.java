@@ -446,8 +446,8 @@ public record ReservationProcess(
 
     /** Detiene nuevos POST automáticos sin presentar el fallo como cancelación central. */
     public ReservationProcess requireCancellationRetry(String code) {
-        return cancellation != CancellationState.PENDING ? this
-                : withCancellation(CancellationState.RETRY_REQUIRED, code);
+        return cancellation == CancellationState.PENDING
+                ? withCancellation(CancellationState.RETRY_REQUIRED, code) : this;
     }
 
     private CancellationState cancellationAfter(ReservationPhase next) {

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -444,7 +445,7 @@ class StartReservationTests {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
     void anUncertainConfirmationCheckpointCannotReachTheTransport(CommitFaultDataSource.Mode mode) {
-        var storage = org.mockito.Mockito.spy(repository);
+        var storage = spy(repository);
         doAnswer(call -> {
             if (mode == CommitFaultDataSource.Mode.AFTER) call.callRealMethod();
             throw new com.prog2.appointment.reservation.domain.exception.ReservationStorageException();

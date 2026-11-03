@@ -471,8 +471,8 @@ class ReservationCancellationIntegrationTests {
         assertThat(old.queryForObject("SELECT COUNT(*) FROM app_user", Integer.class)).isEqualTo(1);
         var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", process.id().toString());
         assertThat(row).containsEntry("phase", "CONFIRMED")
-                .containsEntry("professional_first_name", "Profesional");
-        assertThat(row).doesNotContainKeys("cancellation_attempts", "cancellation_retry_version");
+                .containsEntry("professional_first_name", "Profesional")
+                .doesNotContainKeys("cancellation_attempts", "cancellation_retry_version");
         assertThat(row.get("cancellation_status")).isNull();
         assertThat(row.get("active_owner_id")).isNull();
     }
@@ -549,22 +549,22 @@ class ReservationCancellationIntegrationTests {
         Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
         for (int i=0;i<ids.size();i++) {
             var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", ids.get(i).toString());
-            assertThat(row).containsEntry("phase", phases.get(i));
             String expectedStatus = switch (i) {
                 case 0 -> "PENDING";
                 case 3 -> null;
                 default -> "RETRY_REQUIRED";
             };
-            assertThat(row.get("cancellation_status")).isEqualTo(expectedStatus);
-            assertThat(row).doesNotContainKeys("cancellation_requested_at", "cancellation_retry_version", "cancellation_attempts",
+            assertThat(row).containsEntry("phase", phases.get(i))
+                    .containsEntry("cancellation_status", expectedStatus)
+                    .doesNotContainKeys("cancellation_requested_at", "cancellation_retry_version", "cancellation_attempts",
                     "cancellation_next_attempt_at", "cancellation_last_failure");
             if (i<3) {
                 var next = old.queryForObject("SELECT recovery_next_attempt_at FROM reservation_process WHERE id=?",
                         (rs,n) -> rs.getTimestamp(1).toInstant(), ids.get(i).toString());
                 assertThat(next).isEqualTo(NOW.plusSeconds(60));
-                assertThat(row.get("reason_code")).isEqualTo("CANCELLATION_UNCERTAIN");
+                assertThat(row).containsEntry("reason_code", "CANCELLATION_UNCERTAIN");
             }
-            assertThat(row.get("central_process_id")).isEqualTo(repository.find(ids.get(i)).orElseThrow().hold().centralProcessId());
+            assertThat(row).containsEntry("central_process_id", repository.find(ids.get(i)).orElseThrow().hold().centralProcessId());
         }
         assertThat(old.queryForMap("SELECT * FROM reservation_phone_submission WHERE id=?", phoneId.toString())).isEqualTo(phone);
         assertThat(old.queryForList("SELECT event_id FROM reservation_processed_event", String.class))
