@@ -1,5 +1,7 @@
 package com.prog2.appointment.user.infrastructure.security;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -16,14 +18,11 @@ import com.prog2.appointment.user.domain.model.UserToken;
 import com.prog2.appointment.user.domain.ports.out.UserTokenIssuer;
 
 /** Adapter de firma RS256 de usuarios; mantiene separado el perfil técnico existente. */
+@Component("userTokenIssuer")
+@RequiredArgsConstructor
 public final class NimbusUserTokenIssuerAdapter implements UserTokenIssuer {
     private final JwtEncoder encoder;
     private final Clock clock;
-
-    public NimbusUserTokenIssuerAdapter(JwtEncoder encoder, Clock clock) {
-        this.encoder = encoder;
-        this.clock = clock;
-    }
 
     @Override
     public UserToken issue(long userId, Set<String> authorities, Duration lifetime) {

@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.messaging;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /** Productor reutilizable con espera acotada; su ACK acredita recepción, nunca confirmación. */
+@RequiredArgsConstructor
 public final class KafkaPhoneSubmissionAdapter implements PhonePublicationGateway, AutoCloseable {
     private final ReservationKafkaChannel channel;
     private final JsonMapper json;
@@ -34,14 +36,6 @@ public final class KafkaPhoneSubmissionAdapter implements PhonePublicationGatewa
     private KafkaTemplate<String, String> template;
     private ReservationKafkaChannel.PhoneDestination destination;
     private boolean closed;
-
-    public KafkaPhoneSubmissionAdapter(
-            ReservationKafkaChannel channel, JsonMapper json, Clock clock, Duration timeout) {
-        this.channel = channel;
-        this.json = json;
-        this.clock = clock;
-        this.timeout = timeout;
-    }
 
     @Override
     public synchronized void publish(PhoneSubmission phone) {

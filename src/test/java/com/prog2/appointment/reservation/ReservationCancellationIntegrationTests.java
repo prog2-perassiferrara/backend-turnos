@@ -6,10 +6,10 @@ import com.prog2.appointment.integration.TestIntegrationSupport;
 import com.prog2.appointment.reservation.domain.enums.*;
 import com.prog2.appointment.reservation.domain.model.*;
 import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase;
+import com.prog2.appointment.reservation.domain.ports.in.RecoverReservationProcessesUseCase;
 import com.prog2.appointment.reservation.domain.ports.out.*;
 import com.prog2.appointment.reservation.infrastructure.messaging.PhoneSubmissionDispatcher;
 import com.prog2.appointment.reservation.infrastructure.messaging.ReservationActionParser;
-import com.prog2.appointment.reservation.infrastructure.scheduling.CancellationDispatcher;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.*;
@@ -53,6 +53,7 @@ class ReservationCancellationIntegrationTests {
     private final JdbcTemplate jdbc;
     private final ReservationProcessRepository repository;
     private final RecoverReservationCancellationsUseCase recover;
+    private final RecoverReservationProcessesUseCase reviews;
     private final ReservationActionParser parser;
     private final CommitFaultDataSource faults;
     private final TestClock clock;
@@ -65,11 +66,11 @@ class ReservationCancellationIntegrationTests {
 
     ReservationCancellationIntegrationTests(@LocalServerPort int port, JsonMapper json,
             JdbcTemplate jdbc, ReservationProcessRepository repository,
-            RecoverReservationCancellationsUseCase recover, ReservationActionParser parser,
+            RecoverReservationCancellationsUseCase recover, RecoverReservationProcessesUseCase reviews, ReservationActionParser parser,
             CommitFaultDataSource faults, TestClock clock, TestPublisher publisher,
             PhoneSubmissionDispatcher phones, ThreadPoolTaskScheduler scheduler) {
         this.port = port; this.json = json; this.jdbc = jdbc; this.repository = repository;
-        this.recover = recover; this.parser = parser; this.faults = faults; this.clock = clock;
+        this.recover = recover; this.reviews = reviews; this.parser = parser; this.faults = faults; this.clock = clock;
         this.publisher = publisher; this.phones = phones; this.scheduler = scheduler;
     }
 
@@ -90,7 +91,7 @@ class ReservationCancellationIntegrationTests {
     @BeforeEach
     void setup() throws Exception {
         faults.clear(); clock.value.set(NOW); publisher.reset(); PROVIDERS.reset();
-        jdbc.update("DELETE FROM reservation_inbox");
+        jdbc.update("DELETE FROM reservation_processed_event");
         jdbc.update("DELETE FROM reservation_phone_submission");
         jdbc.update("DELETE FROM reservation_process");
         http = HttpClient.newHttpClient();
@@ -131,7 +132,10 @@ class ReservationCancellationIntegrationTests {
                 new ReservationPatient(owner, "Paciente", "Ficticio"));
         process = process.acceptHold(new HoldDetails("hold-" + process.id(), "central-" + process.id(), NOW.plusSeconds(300)))
                 .beginConfirmation();
-        if (confirmed) process = process.reconcile(evidence(process, CentralAppointmentState.CONFIRMED), NOW);
+        if (confirmed) {
+            process = process.reconcile(evidence(process, CentralAppointmentState.CONFIRMED), NOW);
+            central(process, "CONFIRMED");
+        }
         assertThat(repository.begin(process).created()).isTrue();
         return repository.find(process.id()).orElseThrow();
     }
@@ -156,6 +160,44 @@ class ReservationCancellationIntegrationTests {
         PROVIDERS.cancellationOverride.set(exchange -> TestIntegrationSupport.respond(exchange, 503, "{}"));
     }
 
+    private void largeCentralHistory(ReservationProcess process) {
+        PROVIDERS.appointmentsOverride.set(exchange -> {
+            exchange.getResponseHeaders().set("X-Total-Count", "400");
+            exchange.getResponseHeaders().set("Link", "</next>; rel=\"next\"");
+            var rows = java.util.stream.IntStream.range(0, 100).mapToObj(index -> Map.of(
+                    "reservationId", 8251L + index,
+                    "reservationProcessId", index == 0 ? process.hold().centralProcessId() : "other-" + index,
+                    "externalPatientId", process.patient().externalPatientId(),
+                    "professionalId", process.selection().professionalId(),
+                    "appointmentDate", process.selection().date().minusDays(index).toString(),
+                    "startTime", process.selection().startTime().toString(), "status", "CONFIRMED")).toList();
+            TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(rows));
+        });
+    }
+
+    @Test
+    void cancellationUsesAnExactEarlyMatchWithoutReadingTheWholeCentralHistory() throws Exception {
+        var process = seed(true);
+        largeCentralHistory(process);
+        var response = request("POST", path(process, "cancel"), null, token);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(PROVIDERS.appointmentQueries).hasValue(1);
+        assertThat(PROVIDERS.cancellations).hasValue(1);
+    }
+
+    @Test
+    void recoveryUsesAnExactEarlyMatchWithoutReadingTheWholeCentralHistory() {
+        var process = seed(false);
+        largeCentralHistory(process);
+        clock.value.set(NOW.plusSeconds(31));
+        reviews.recoverDue();
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMED);
+        assertThat(PROVIDERS.appointmentQueries).hasValue(1);
+        assertThat(PROVIDERS.cancellations).hasValue(0);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
+    }
+
     private static ReservationAction phoneRequest(ReservationProcess process) {
         return new ReservationAction(ReservationActionType.PHONE_REQUESTED,
                 new ReservationAction.Correlation("request-1", process.hold().centralProcessId(),
@@ -173,9 +215,8 @@ class ReservationCancellationIntegrationTests {
             row.put("date", process.selection().date().toString()); row.put("startTime", "09:00");
             row.put("status", type.equals("AppointmentConfirmed") ? "CONFIRMED" : "CANCELLED");
         }
-        var delivery = parser.parse(new ReservationDelivery.Origin(ReservationTestSupport.TOPIC, 0,
-                Integer.toUnsignedLong(eventId.hashCode()), process.hold().centralProcessId()), json.writeValueAsString(row));
-        repository.accept(delivery);
+        var action = parser.parse(process.hold().centralProcessId(), json.writeValueAsString(row)).orElseThrow();
+        repository.accept(action);
     }
 
     @Test
@@ -185,13 +226,21 @@ class ReservationCancellationIntegrationTests {
         assertThat(response.statusCode()).isEqualTo(200);
         var body = json.readTree(response.body());
         assertThat(body.path("state").asString()).isEqualTo("CANCELLED");
-        assertThat(body.path("cancellation").path("status").asString()).isEqualTo("RESOLVED");
+        assertThat(body.path("cancellation").isNull()).isTrue();
         assertThat(response.headers().firstValue("Cache-Control")).hasValue("no-store");
         assertThat(response.body()).doesNotContain(process.hold().centralProcessId(), process.hold().holdId(), PROVIDERS.token);
         assertThat(request("POST", path(process, "cancel"), null, token).statusCode()).isEqualTo(200);
         assertThat(PROVIDERS.cancellations).hasValue(1);
         assertThat(PROVIDERS.cancellationBody.get()).isEmpty();
         assertThat(repository.find(process.id()).orElseThrow().isPending()).isFalse();
+    }
+
+    @Test
+    void theRemovedAbandonRouteCannotChangeAPendingProcess() throws Exception {
+        var process = seed(false);
+        assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(404);
+        assertThat(repository.find(process.id()).orElseThrow()).isEqualTo(process);
+        assertThat(PROVIDERS.cancellations).hasValue(0);
     }
 
     @Test
@@ -205,7 +254,6 @@ class ReservationCancellationIntegrationTests {
         var auth = request("POST", "/api/authenticate", Map.of("username", login, "password", password), null);
         String other = json.readTree(auth.body()).path("id_token").asString();
         assertThat(request("POST", path(process, "cancel"), null, other).statusCode()).isEqualTo(404);
-        assertThat(request("POST", path(process, "abandon"), null, other).statusCode()).isEqualTo(404);
         assertThat(request("POST", path(process, "cancel"), null, null).statusCode()).isEqualTo(401);
         assertThat(PROVIDERS.cancellations).hasValue(0);
     }
@@ -219,34 +267,11 @@ class ReservationCancellationIntegrationTests {
     }
 
     @Test
-    void invalidRetryBodyAndIncompatibleStateAreRejectedBeforeEffects() throws Exception {
+    void anIncompatibleStateIsRejectedBeforeEffectsWithoutARetryBody() throws Exception {
         var pending = seed(false);
         assertThat(request("POST", path(pending, "cancel"), null, token).statusCode()).isEqualTo(409);
-        assertThat(request("POST", path(pending, "abandon"), Map.of("retryVersion", -1), token).statusCode()).isEqualTo(400);
-        assertThat(request("POST", path(pending, "abandon"), Map.of("retryVersion", 1), token).statusCode()).isEqualTo(409);
         assertThat(PROVIDERS.cancellations).hasValue(0);
-    }
-
-    @Test
-    void uncertainAbandonmentKeepsCreationExclusiveAndPausesPhoneAtomically() throws Exception {
-        var process = seed(false);
-        repository.update(process.id(), p -> p.apply(phoneRequest(p), NOW));
-        UUID submission = UUID.randomUUID();
-        repository.submitPhone(owner, process.id(), new SubmitPhoneRequest(submission, "1234567"), ReservationTestSupport.GROUP, NOW);
-        unavailable();
-        assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(202);
-        var current = repository.find(process.id()).orElseThrow();
-        assertThat(current.abandonmentPending()).isTrue();
-        assertThat(current.isPending()).isTrue();
-        assertThat(current.hold().expiresAt()).isEqualTo(process.hold().expiresAt());
-        assertThat(repository.findPhone(submission).orElseThrow().closedAt()).isNotNull();
-        assertThat(current.cancellation().attempts()).isZero();
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(repository.beginPhonePublication(submission, NOW, 3, Duration.ofSeconds(5), Duration.ofSeconds(30))).isEmpty();
-        var replacement = ReservationProcess.begin(new StartReservationRequest(UUID.randomUUID(), ReservationProcessTests.SLOT),
-                new ReservationPatient(owner, "Paciente", "Ficticio"));
-        assertThat(repository.begin(replacement).created()).isFalse();
-        assertThat(repository.findPending(owner)).map(ReservationProcess::id).contains(process.id());
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
     }
 
     @Test
@@ -260,116 +285,66 @@ class ReservationCancellationIntegrationTests {
         var body = json.readTree(result.body());
         assertThat(body.path("pending").path("processId").asString()).isEqualTo(pending.id().toString());
         assertThat(body.path("history").path("totalElements").asLong()).isEqualTo(1);
-        assertThat(body.path("history").path("content").get(0).path("cancellation").path("status").asString()).isEqualTo("PENDING");
-        assertThat(PROVIDERS.cancellations).hasValue(1);
+        assertThat(body.path("history").path("content").get(0).path("cancellation").path("status").asString()).isEqualTo("RETRY_REQUIRED");
+        assertThat(PROVIDERS.cancellations).hasValue(3);
     }
 
     @Test
-    void getReconcilesCancelledConfirmationWithoutRepeatingThePost() throws Exception {
-        var process = seed(true);
-        unavailable();
+    void recoveryReconcilesCancelledConfirmationWhileGetOnlyReads() throws Exception {
+        var process = seed(true); unavailable();
         request("POST", path(process, "cancel"), null, token);
+        int queries = PROVIDERS.appointmentQueries.get();
         central(process, "CANCELLED");
-        var result = request("GET", "/api/reservation-processes/" + process.id(), null, token);
-        assertThat(json.readTree(result.body()).path("state").asString()).isEqualTo("CANCELLED");
-        assertThat(PROVIDERS.cancellations).hasValue(1);
-        assertThat(repository.dueCancellations(NOW.plusSeconds(10000), 10)).isEmpty();
+        var local = request("GET", "/api/reservation-processes/" + process.id(), null, token);
+        assertThat(json.readTree(local.body()).path("state").asString()).isEqualTo("CONFIRMED");
+        assertThat(PROVIDERS.appointmentQueries).hasValue(queries);
+        clock.value.set(NOW.plusSeconds(3601)); recover.recover(process.id());
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(PROVIDERS.cancellations).hasValue(3);
+        assertThat(repository.find(process.id()).orElseThrow().cancellation()).isNull();
     }
 
     @Test
-    void getAndReplayCannotResetTheBudgetAndAnExplicitVersionOpensOnlyOneCycle() throws Exception {
-        var process = seed(true);
-        unavailable();
-        request("POST", path(process, "cancel"), null, token);
+    void automaticRetriesStopAndConcurrentExplicitRetriesNeedNoVersion() throws Exception {
+        var process = seed(true); unavailable();
+        // El ciclo de tres GET/POST puede superar el plazo HTTP del cliente del test.
+        // Prepararlo por sus puertos conserva el recorrido HTTP para los retries concurrentes.
+        repository.requestCancellation(owner, process.id(), clock.instant());
+        recover.recover(process.id());
+        assertThat(repository.find(process.id()).orElseThrow().cancellation()).isEqualTo(CancellationState.RETRY_REQUIRED);
         for (int i = 1; i <= 2; i++) {
-            clock.value.set(NOW.plusSeconds(i * 3601L));
-            recover.recoverDue();
+            clock.value.set(NOW.plusSeconds(i * 3601L)); reviews.recoverDue();
         }
-        assertThat(repository.find(process.id()).orElseThrow().cancellation().attempts()).isEqualTo(3);
-        clock.value.set(NOW.plusSeconds(11000));
-        recover.recoverDue();
-        request("GET", "/api/reservation-processes/" + process.id(), null, token);
-        request("POST", path(process, "cancel"), null, token);
         assertThat(PROVIDERS.cancellations).hasValue(3);
         var response = request("GET", "/api/reservation-processes/" + process.id(), null, token);
-        assertThat(json.readTree(response.body()).path("cancellation").path("canRetry").asBoolean()).isTrue();
-        PROVIDERS.cancellationOverride.set(null);
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            var first = executor.submit(() -> request("POST", path(process, "cancel"), Map.of("retryVersion", 0), token));
-            var second = executor.submit(() -> request("POST", path(process, "cancel"), Map.of("retryVersion", 0), token));
-            assertThat(first.get(10, TimeUnit.SECONDS).statusCode()).isIn(200, 202);
-            assertThat(second.get(10, TimeUnit.SECONDS).statusCode()).isIn(200, 202);
+        var cancellation = json.readTree(response.body()).path("cancellation");
+        assertThat(cancellation.path("canRetry").asBoolean()).isTrue();
+        assertThat(cancellation.has("retryVersion")).isFalse();
+        assertThat(cancellation.has("requestedAt")).isFalse();
+        var sent = new CountDownLatch(1);
+        PROVIDERS.cancellationOverride.set(exchange -> {
+            faults.arm(CommitFaultDataSource.Mode.BLOCK, "update reservation_process", 1);
+            sent.countDown();
+            TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(Map.of(
+                    "reservationId", process.reservationId(), "reservationProcessId", process.hold().centralProcessId(),
+                    "status", "CANCELLED", "cancelledAt", NOW.toString())));
+        });
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            var first = executor.submit(() -> request("POST", path(process, "cancel"), null, token));
+            assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(faults.entered.get().await(5, TimeUnit.SECONDS)).isTrue();
+            var second = executor.submit(() -> request("POST", path(process, "cancel"), null, token));
+            assertThat(second.get(10, TimeUnit.SECONDS).statusCode()).isEqualTo(202);
+            faults.release.get().countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        } finally {
+            // Liberar el commit antes de esperar tareas, también si falla una aserción.
+            faults.clear();
+            executor.close();
         }
         assertThat(PROVIDERS.cancellations).hasValue(4);
-        assertThat(repository.find(process.id()).orElseThrow().cancellation().retryVersion()).isEqualTo(1);
-    }
-
-    @Test
-    void expiredLocalClockAndEmptyCentralListDoNotReleaseUnknownResult() throws Exception {
-        var process = seed(false);
-        unavailable();
-        request("POST", path(process, "abandon"), null, token);
-        clock.value.set(NOW.plusSeconds(400));
-        request("GET", "/api/reservation-processes/" + process.id(), null, token);
-        var current = repository.find(process.id()).orElseThrow();
-        assertThat(current.isPending()).isTrue();
-        assertThat(current.phase()).isNotIn(ReservationPhase.CANCELLED, ReservationPhase.EXPIRED);
-    }
-
-    @Test
-    void waitingAbandonmentCancelsOnlyAfterACorrelatedConfirmation() throws Exception {
-        var process = seed(false);
-        request("POST", path(process, "abandon"), null, token);
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        repository.reconcile(process.id(), evidence(process, CentralAppointmentState.CONFIRMED), NOW);
-        var current = repository.find(process.id()).orElseThrow();
-        assertThat(current.phase()).isEqualTo(ReservationPhase.CONFIRMED);
-        assertThat(current.cancellation().state()).isEqualTo(CancellationState.PENDING);
-        assertThat(current.isPending()).isTrue();
-        recover.recoverDue();
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
-        assertThat(PROVIDERS.cancellations).hasValue(1);
-    }
-
-    @Test
-    void stableUnsentAbandonmentWaitsThenExpiresAndReleasesOnlyTheLocalCreationSlot() throws Exception {
-        var process = seed(false);
-        repository.update(process.id(), p -> p.acceptInitialConfirmation(p.hold()));
-        assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(202);
-        clock.value.set(process.hold().expiresAt().minusSeconds(1));
-        recover.recoverDue();
-        assertThat(repository.findPending(owner)).isPresent();
-        assertThat(repository.find(process.id()).orElseThrow().cancellation().attempts()).isZero();
-        clock.value.set(process.hold().expiresAt());
-        recover.recoverDue();
-        var result = repository.find(process.id()).orElseThrow();
-        assertThat(result.phase()).isEqualTo(ReservationPhase.EXPIRED);
-        assertThat(result.cancellation().state()).isEqualTo(CancellationState.RESOLVED);
-        assertThat(result.cancellation().attempts()).isZero();
-        assertThat(repository.findPending(owner)).isEmpty();
-        assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(200);
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
-    }
-
-    @Test
-    void anyRecordedPhoneKeepsAbandonmentUncertainAfterExpiryAndRecoveryIsBounded() throws Exception {
-        var process = seed(false);
-        repository.update(process.id(), p -> p.apply(phoneRequest(p), NOW));
-        repository.submitPhone(owner, process.id(), new SubmitPhoneRequest(UUID.randomUUID(), "1234567"),
-                ReservationTestSupport.GROUP, NOW);
-        request("POST", path(process, "abandon"), null, token);
-        for (int i = 1; i <= 4; i++) {
-            clock.value.set(NOW.plusSeconds(i * 3601L));
-            recover.recoverDue();
-        }
-        var result = repository.find(process.id()).orElseThrow();
-        assertThat(result.isPending()).isTrue();
-        assertThat(result.cancellation().attempts()).isEqualTo(3);
-        assertThat(result.cancellation().canRetry(clock.instant())).isTrue();
-        assertThat(PROVIDERS.appointmentQueries).hasValue(3);
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(repository.findPending(owner)).isPresent();
     }
 
     @Test
@@ -380,7 +355,7 @@ class ReservationCancellationIntegrationTests {
         apply(process, "AppointmentCancelled", "cancel-event");
         apply(process, "AppointmentConfirmed", "old-confirmation");
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_inbox", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event", Integer.class)).isEqualTo(2);
     }
 
     @Test
@@ -393,67 +368,69 @@ class ReservationCancellationIntegrationTests {
     }
 
     @Test
-    void commitResponseLostAfterAcceptanceStillUsesTheVerifiedIntentOnce() throws Exception {
+    void commitResponseLostAfterAcceptanceReturnsAnErrorAndRecoveryReadsTheIntent() throws Exception {
         var process = seed(true);
         faults.arm(CommitFaultDataSource.Mode.AFTER, "update reservation_process", 1);
-        assertThat(request("POST", path(process, "cancel"), null, token).statusCode()).isEqualTo(200);
+        assertThat(request("POST", path(process, "cancel"), null, token).statusCode()).isEqualTo(503);
+        assertThat(PROVIDERS.cancellations).hasValue(0);
+        assertThat(repository.find(process.id()).orElseThrow().cancellation()).isEqualTo(CancellationState.PENDING);
+        recover.recover(process.id());
         assertThat(PROVIDERS.cancellations).hasValue(1);
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
     }
 
-    @Test
-    void uncertainClaimNeverGrantsAnUnverifiedPostPermission() {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
+    void uncertainClaimNeverGrantsAnUnverifiedPostPermission(CommitFaultDataSource.Mode mode) {
         var process = seed(true);
-        repository.requestCancellation(owner, process.id(), CancellationKind.CANCEL, null, NOW);
-        faults.arm(CommitFaultDataSource.Mode.BEFORE, "update reservation_process", 1);
-        recover.recover(process.id());
+        repository.requestCancellation(owner, process.id(), NOW);
+        faults.arm(mode, "update reservation_process", 1);
+        assertThatThrownBy(() -> recover.recover(process.id())).isInstanceOf(
+                com.prog2.appointment.reservation.domain.exception.ReservationStorageException.class);
         assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(repository.find(process.id()).orElseThrow().cancellation().attempts()).isZero();
+        assertThat(PROVIDERS.appointmentQueries).hasValue(0);
+        assertThat(repository.find(process.id()).orElseThrow().cancellation()).isEqualTo(CancellationState.PENDING);
+        faults.clear(); clock.value.set(NOW.plusSeconds(7200));
         recover.recover(process.id());
+        assertThat(PROVIDERS.cancellations).hasValue(1);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
+    void aCancellationResultCommitErrorIsNotRescuedAndRecoveryUsesCentralEvidence(CommitFaultDataSource.Mode mode) throws Exception {
+        var process = seed(true);
+        PROVIDERS.cancellationOverride.set(exchange -> {
+            faults.arm(mode, "update reservation_process", 1);
+            TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(Map.of(
+                    "reservationProcessId", process.hold().centralProcessId(), "reservationId", 8251,
+                    "status", "CANCELLED", "cancelledAt", NOW.toString())));
+        });
+        assertThat(request("POST", path(process, "cancel"), null, token).statusCode()).isEqualTo(503);
+        assertThat(PROVIDERS.cancellations).hasValue(1);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(
+                mode == CommitFaultDataSource.Mode.AFTER ? ReservationPhase.CANCELLED : ReservationPhase.CONFIRMED);
+        faults.clear(); central(process, "CANCELLED"); clock.value.set(NOW.plusSeconds(7200));
+        recover.recover(process.id());
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
         assertThat(PROVIDERS.cancellations).hasValue(1);
     }
 
     @Test
     void aPersistedInterruptedClaimRequiresReconciliationBeforeAnotherPost() {
         var process = seed(true);
-        repository.requestCancellation(owner, process.id(), CancellationKind.CANCEL, null, NOW);
+        repository.requestCancellation(owner, process.id(), NOW);
         repository.beginCancellationAttempt(process.id(), NOW, Duration.ofSeconds(10));
         clock.value.set(NOW.plusSeconds(11));
         recover.recover(process.id());
         assertThat(PROVIDERS.appointmentQueries).hasValue(1);
         assertThat(PROVIDERS.cancellations).hasValue(1);
-        assertThat(repository.find(process.id()).orElseThrow().cancellation().attempts()).isEqualTo(2);
-    }
-
-    @Test
-    void aPhoneAlreadyInFlightCannotReopenTheCancelledProcess() throws Exception {
-        var process = seed(false);
-        repository.update(process.id(), p -> p.apply(phoneRequest(p), NOW));
-        UUID phone = UUID.randomUUID();
-        repository.submitPhone(owner, process.id(), new SubmitPhoneRequest(phone, "1234567"), ReservationTestSupport.GROUP, NOW);
-        publisher.block.set(true);
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            var publication = executor.submit(phones::dispatch);
-            assertThat(publisher.entered.get().await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(202);
-            publisher.release.get().countDown();
-            publication.get(5, TimeUnit.SECONDS);
-        } finally { publisher.release.get().countDown(); }
-        phones.dispatch();
-        assertThat(publisher.count).hasValue(1);
-        assertThat(repository.findPhone(phone).orElseThrow().closedAt()).isNotNull();
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(repository.find(process.id()).orElseThrow().isPending()).isTrue();
-        apply(process, "AppointmentConfirmed", "in-flight-confirmation");
-        recover.recoverDue();
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
-        assertThat(PROVIDERS.cancellations).hasValue(1);
     }
 
     @Test
     void blockedCancellationWorkerDoesNotBlockThePhoneScheduler() throws Exception {
         var confirmed = seed(true);
-        repository.requestCancellation(owner, confirmed.id(), CancellationKind.CANCEL, null, NOW);
+        repository.requestCancellation(owner, confirmed.id(), NOW);
         var pending = seed(false);
         repository.update(pending.id(), p -> p.apply(phoneRequest(p), NOW));
         repository.submitPhone(owner, pending.id(), new SubmitPhoneRequest(UUID.randomUUID(), "1234567"), ReservationTestSupport.GROUP, NOW);
@@ -465,7 +442,7 @@ class ReservationCancellationIntegrationTests {
             catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IOException(failure); }
             TestIntegrationSupport.respond(exchange, 503, "{}");
         });
-        var future = scheduler.schedule(new CancellationDispatcher(recover)::dispatch, Instant.now());
+        var future = scheduler.schedule(reviews::recoverDue, Instant.now());
         try {
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
             var publication = scheduler.schedule(phones::dispatch, Instant.now());
@@ -473,16 +450,6 @@ class ReservationCancellationIntegrationTests {
             publication.get(3, TimeUnit.SECONDS);
         } finally { release.countDown(); }
         future.get(5, TimeUnit.SECONDS);
-    }
-
-    @Test
-    void aCreationWithoutCentralIdsCannotBeCancelledByOccupancy() throws Exception {
-        var process = ReservationProcess.begin(new StartReservationRequest(UUID.randomUUID(), ReservationProcessTests.SLOT),
-                new ReservationPatient(owner, "Paciente", "Ficticio"));
-        repository.begin(process);
-        assertThat(request("POST", path(process, "abandon"), null, token).statusCode()).isEqualTo(409);
-        assertThat(PROVIDERS.cancellations).hasValue(0);
-        assertThat(repository.find(process.id()).orElseThrow().isPending()).isTrue();
     }
 
     @Test
@@ -498,16 +465,112 @@ class ReservationCancellationIntegrationTests {
         final String columns = "id,owner_id,professional_id,appointment_date,start_time,patient_first_name,patient_last_name,"
                 + "phase,hold_id,central_process_id,expires_at,request_event_id,reservation_id,reason_code,version,write_id,"
                 + "closed_at,abandonment_pending,created_at,updated_at,professional_first_name,professional_last_name";
-        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns
+        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns.replace("abandonment_pending", "FALSE").replace("cancellation_kind", "IF(cancellation_status IS NULL,NULL,'CANCEL')")
                 + " FROM cancellation.reservation_process WHERE id=?", process.id().toString());
         Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
         assertThat(old.queryForObject("SELECT COUNT(*) FROM app_user", Integer.class)).isEqualTo(1);
         var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", process.id().toString());
         assertThat(row).containsEntry("phase", "CONFIRMED")
                 .containsEntry("professional_first_name", "Profesional")
-                .containsEntry("cancellation_attempts", 0);
+                .doesNotContainKeys("cancellation_attempts", "cancellation_retry_version");
         assertThat(row.get("cancellation_status")).isNull();
         assertThat(row.get("active_owner_id")).isNull();
+    }
+
+    @Test
+    void onlyOneConcurrentSqlClaimCanOwnTheCancellationExecution() throws Exception {
+        var p = seed(true); repository.requestCancellation(owner, p.id(), NOW);
+        var gate = new CountDownLatch(1);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
+            var a = workers.submit(() -> { gate.await(); return repository.beginCancellationAttempt(p.id(), NOW, Duration.ofSeconds(30)); });
+            var b = workers.submit(() -> { gate.await(); return repository.beginCancellationAttempt(p.id(), NOW, Duration.ofSeconds(30)); });
+            gate.countDown();
+            assertThat(java.util.stream.Stream.of(a.get(10, TimeUnit.SECONDS), b.get(10, TimeUnit.SECONDS))
+                    .filter(java.util.Optional::isPresent).count()).isEqualTo(1);
+        }
+        assertThat(PROVIDERS.cancellations).hasValue(0);
+    }
+
+    @Test
+    void aLateFailureCannotStopANewerExecutionOrUndoAConfirmedCancellation() {
+        var p = seed(true); repository.requestCancellation(owner, p.id(), NOW);
+        var old = repository.beginCancellationAttempt(p.id(), NOW, Duration.ofSeconds(30)).orElseThrow();
+        repository.finishCancellationAttempt(p.id(), old.writeId(), true, "CANCELLATION_UNCERTAIN", NOW, NOW.plusSeconds(5));
+        repository.requestCancellation(owner, p.id(), NOW);
+        var current = repository.beginCancellationAttempt(p.id(), NOW, Duration.ofSeconds(30)).orElseThrow();
+        repository.finishCancellationAttempt(p.id(), old.writeId(), true, "CANCELLATION_REJECTED", NOW, NOW);
+        assertThat(repository.find(p.id()).orElseThrow().writeId()).isEqualTo(current.writeId());
+        assertThat(repository.find(p.id()).orElseThrow().cancellation()).isEqualTo(CancellationState.PENDING);
+        repository.confirmCancellation(p.id(), new CancellationEvidence(p.hold().centralProcessId(), 8251L, NOW), NOW);
+        repository.finishCancellationAttempt(p.id(), current.writeId(), true, "CANCELLATION_UNCERTAIN", NOW, NOW);
+        assertThat(repository.find(p.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        assertThat(repository.find(p.id()).orElseThrow().cancellation()).isNull();
+    }
+
+    @Test
+    void v12ConservativelyMigratesPendingStoppedAndResolvedIntentionsWithoutLosingOtherData() throws Exception {
+        String baseUrl = "jdbc:mysql://" + MYSQL.getHost() + ":" + MYSQL.getFirstMappedPort() + "/";
+        try (var connection = DriverManager.getConnection(baseUrl, "root", MYSQL.getPassword());
+                var statement = connection.createStatement()) { statement.execute("CREATE DATABASE cancellation_v11"); }
+        String url = baseUrl + "cancellation_v11";
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).target("11").load().migrate();
+        var old = new JdbcTemplate(new DriverManagerDataSource(url, "root", MYSQL.getPassword()));
+        old.update("INSERT INTO app_user SELECT * FROM cancellation.app_user WHERE id=?", owner);
+        String columns = "id,owner_id,professional_id,appointment_date,start_time,patient_first_name,patient_last_name,"
+                + "phase,hold_id,central_process_id,expires_at,request_event_id,reservation_id,reason_code,version,write_id,"
+                + "closed_at,created_at,updated_at,professional_first_name,professional_last_name,cancellation_status,recovery_next_attempt_at";
+        var ids = new java.util.ArrayList<UUID>();
+        var phases = new java.util.ArrayList<String>();
+        String[] previous = {"PENDING", "PENDING", "REJECTED", "RESOLVED"};
+        int[] attempts = {0, 3, 1, 3};
+        for (int i=0;i<previous.length;i++) {
+            var process = seed(true); ids.add(process.id());
+            if (i==3) repository.confirmCancellation(process.id(), new CancellationEvidence(process.hold().centralProcessId(), 8251L, NOW), NOW);
+            phases.add(repository.find(process.id()).orElseThrow().phase().name());
+            old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns
+                    + " FROM cancellation.reservation_process WHERE id=?", process.id().toString());
+            old.update("UPDATE reservation_process SET cancellation_status=?, cancellation_requested_at=?,"
+                    + "cancellation_retry_version=7,cancellation_attempts=?,cancellation_next_attempt_at=?,"
+                    + "cancellation_last_failure='CANCELLATION_UNCERTAIN',recovery_next_attempt_at=? WHERE id=?",
+                    previous[i], java.sql.Timestamp.from(NOW), attempts[i], java.sql.Timestamp.from(NOW.plusSeconds(60)),
+                    java.sql.Timestamp.from(NOW.plusSeconds(30)), process.id().toString());
+        }
+        var waiting = seed(false); repository.accept(phoneRequest(waiting));
+        var phoneId = UUID.randomUUID(); repository.submitPhone(owner, waiting.id(),
+                new SubmitPhoneRequest(phoneId, "1234567"), ReservationTestSupport.GROUP, NOW);
+        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns
+                + " FROM cancellation.reservation_process WHERE id=?", waiting.id().toString());
+        String phoneColumns = "id,sequence_id,process_id,group_id,central_process_id,hold_id,request_event_id,phone_number,"
+                + "occurred_at,expires_at,published_at,closed_at,cycle_attempt,next_attempt_at,last_failure,version";
+        old.update("INSERT INTO reservation_phone_submission (" + phoneColumns + ") SELECT " + phoneColumns
+                + " FROM cancellation.reservation_phone_submission");
+        old.update("INSERT INTO reservation_processed_event SELECT * FROM cancellation.reservation_processed_event");
+        var phone = jdbc.queryForMap("SELECT * FROM reservation_phone_submission WHERE id=?", phoneId.toString());
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
+        for (int i=0;i<ids.size();i++) {
+            var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", ids.get(i).toString());
+            String expectedStatus = switch (i) {
+                case 0 -> "PENDING";
+                case 3 -> null;
+                default -> "RETRY_REQUIRED";
+            };
+            assertThat(row).containsEntry("phase", phases.get(i))
+                    .containsEntry("cancellation_status", expectedStatus)
+                    .doesNotContainKeys("cancellation_requested_at", "cancellation_retry_version", "cancellation_attempts",
+                    "cancellation_next_attempt_at", "cancellation_last_failure");
+            if (i<3) {
+                var next = old.queryForObject("SELECT recovery_next_attempt_at FROM reservation_process WHERE id=?",
+                        (rs,n) -> rs.getTimestamp(1).toInstant(), ids.get(i).toString());
+                assertThat(next).isEqualTo(NOW.plusSeconds(60));
+                assertThat(row).containsEntry("reason_code", "CANCELLATION_UNCERTAIN");
+            }
+            assertThat(row).containsEntry("central_process_id", repository.find(ids.get(i)).orElseThrow().hold().centralProcessId());
+        }
+        assertThat(old.queryForMap("SELECT * FROM reservation_phone_submission WHERE id=?", phoneId.toString())).isEqualTo(phone);
+        assertThat(old.queryForList("SELECT event_id FROM reservation_processed_event", String.class))
+                .containsExactlyElementsOf(jdbc.queryForList("SELECT event_id FROM reservation_processed_event", String.class));
+        assertThat(old.queryForObject("SELECT login FROM app_user WHERE id=?", String.class, owner))
+                .isEqualTo(jdbc.queryForObject("SELECT login FROM app_user WHERE id=?", String.class, owner));
     }
 
     static final class TestClock extends Clock {

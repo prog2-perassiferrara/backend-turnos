@@ -1,35 +1,20 @@
 # SPEC: Recuperar procesos pendientes y resultados inciertos (CU-09)
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
+**Ajuste posterior aprobado, 2026-11-02:** Las revisiones siguen espaciadas y acotadas por pasada, sin agotar un presupuesto de lecturas. Los efectos conservan sus límites propios. La preparación de mensajería se retoma automáticamente tras una caída, respetando su pausa. Una respuesta REST solo acredita VERIFIED si concuerda con el proceso actual tras una transición concurrente. Se conservan persistencia, exclusión e idempotencia. Confirmado y autorizado a implementar durante la revisión de simplificación. RF/CA vigentes conservados; solución y regresión en PLAN/TASKS.
+
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 
 **Aprobación:** 2026-11-02, explícita del usuario. La autorización de implementación se registra en TASKS.
 
 **Issue:** [#14](https://github.com/prog2-perassiferrara/backend-turnos/issues/14)
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo según el enunciado y los contratos del backend.
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución.
--->
-
-<!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto y los contratos pertinentes. Inspecciona el
-  repositorio para comprobar el comportamiento actual.
-- Completa esta spec con la persona: investiga lo comprobable y consulta las
-  decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
-- No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
-  confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Considera errores, concurrencia, integración y recuperación cuando apliquen,
-  sin ampliar el alcance automáticamente.
-- No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
-  esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
-- Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
-- Un documento completo no está aprobado automáticamente. Solicita aprobación
-  antes de marcarlo como Aprobada. No implementes durante esta etapa.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Qué construimos y para quién
 

@@ -1,24 +1,15 @@
 # SPEC: Acceso técnico y configuración de cátedra para Turnos
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Ciclo de vida actualizado el 2026-11-02 por la [simplificación, Etapa 2](../simplificacion-reservas/PLAN.md#etapa-2-acceso-técnico-mínimo): adquisición al arrancar y acceso en memoria, sin recuperación asíncrona propia. Este documento conserva las decisiones originales como antecedente.
+
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Referencia:** [issue #4](https://github.com/prog2-perassiferrara/backend-turnos/issues/4).
 **Revisión:** 2026-10-16. Se reutilizan los acuerdos de integración y el [contrato proveedor](../../../../backend-catalogo/docs/features/seguridad-jwt/PLAN.md#entrega-http-confirmada), sin copiar su implementación ni trasladar su aprobación a este documento.
 **Decisiones confirmadas:** el usuario eligió 1B (recuperación a demanda) y 2A (conservar sesión central utilizable durante caída de Catálogo).
 **Aprobación:** confirmada explícitamente por el usuario el 2026-10-17 («apruebo spec»). No autoriza implementación; el PLAN requiere revisión propia.
-
-<!-- PARA LA PERSONA
-SPEC define comportamiento y aceptación; PLAN define la solución técnica.
-Esta revisión es documental: no autoriza implementación ni abre otro PR.
-Mobile Guidelines no corresponde al backend.
--->
-
-<!-- PARA EL AGENTE
-- Leer instrucciones, contratos y referencia de Catálogo; verificar el estado real.
-- Distinguir acuerdos previos, propuestas y decisiones pendientes.
-- Consultar solo diferencias con impacto; no repetir decisiones ya confirmadas.
-- Mantener diseño de clases, endpoints propios y algoritmos en PLAN.
-- No aprobar ni implementar por inferencia; respetar autorizaciones posteriores y no modificar el estado de Git.
--->
 
 ## Qué construimos y para quién
 

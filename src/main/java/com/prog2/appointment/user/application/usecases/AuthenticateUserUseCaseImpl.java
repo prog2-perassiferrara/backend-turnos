@@ -1,5 +1,7 @@
 package com.prog2.appointment.user.application.usecases;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import java.time.Duration;
 import com.prog2.appointment.user.application.exception.InvalidCredentialsException;
 import com.prog2.appointment.user.domain.model.RegistrationData;
@@ -10,17 +12,12 @@ import com.prog2.appointment.user.domain.ports.out.UserAccountRepository;
 import com.prog2.appointment.user.domain.ports.out.UserTokenIssuer;
 
 /** Verifica cuenta y contraseña antes de emitir una credencial de usuario; no modifica el perfil. */
+@Component
+@RequiredArgsConstructor
 public final class AuthenticateUserUseCaseImpl implements AuthenticateUserUseCase {
     private final UserAccountRepository accounts;
     private final PasswordHasher passwords;
     private final UserTokenIssuer tokens;
-
-    public AuthenticateUserUseCaseImpl(UserAccountRepository accounts, PasswordHasher passwords,
-            UserTokenIssuer tokens) {
-        this.accounts = accounts;
-        this.passwords = passwords;
-        this.tokens = tokens;
-    }
 
     @Override
     public UserToken authenticate(String identifier, String password, boolean rememberMe) {

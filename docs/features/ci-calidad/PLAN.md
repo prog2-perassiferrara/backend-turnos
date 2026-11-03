@@ -1,23 +1,11 @@
 # PLAN: CI y calidad con GitHub Actions y SonarQube Cloud
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **SPEC de referencia:** [SPEC.md](SPEC.md).
 **Versión revisada:** 2026-10-10; seis RF y siete CA, CI solo hacia main con edited sin filtros adicionales.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** confirmada por el usuario el 2026-10-10 («lo veo bien»). Implementación autorizada previamente y ratificada al pedir finalizar para revisar y publicar.
-
-<!-- PARA LA PERSONA
-Este documento define la solución técnica de la SPEC aprobada. Revisar antes
-de derivar TASKS.md; la autorización de implementación no se deduce de su estado.
--->
-
-<!-- PARA EL AGENTE
-- Leer instrucciones, SPEC y referencias verificadas; Mobile Guidelines no corresponde.
-- Reutilizar Catálogo, consultar diferencias con impacto real y evitar diseños especulativos.
-- Referenciar RF/CA sin duplicarlos; conservar secciones y comentarios proporcionales.
-- Si cambia el comportamiento, volver a SPEC y confirmar el cambio.
-- No marcar el PLAN aprobado sin confirmación ni implementar sin autorización.
-- Respetar la prohibición de operaciones Git que modifiquen estado.
--->
 
 ## Contexto técnico verificado
 

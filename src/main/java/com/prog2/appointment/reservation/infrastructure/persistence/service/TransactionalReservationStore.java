@@ -1,13 +1,11 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.service;
 
-import com.prog2.appointment.reservation.infrastructure.messaging.ReservationActionParser;
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
 import java.time.Clock;
-import com.prog2.appointment.reservation.domain.enums.CancellationKind;
 import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
 import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
-import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository.CancellationAcceptance;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -29,41 +27,24 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import com.prog2.appointment.reservation.domain.enums.ReservationActionType;
 import com.prog2.appointment.reservation.domain.model.ReservationAction;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
-import com.prog2.appointment.reservation.infrastructure.persistence.entity.ReservationInboxEntity;
 import com.prog2.appointment.reservation.infrastructure.persistence.entity.ReservationProcessEntity;
 import com.prog2.appointment.reservation.infrastructure.persistence.mapper.ReservationPersistenceMapper;
-import com.prog2.appointment.reservation.infrastructure.persistence.repository.JpaReservationInboxRepository;
+import com.prog2.appointment.reservation.infrastructure.persistence.repository.JpaProcessedReservationEventRepository;
 import com.prog2.appointment.reservation.infrastructure.persistence.repository.JpaReservationProcessRepository;
 
 /**
  * Transacciones cortas detrás del proxy; el retorno al adaptador incluye confirmación del commit.
  */
 @Component
+@RequiredArgsConstructor
 public class TransactionalReservationStore {
-    private static final String REJECTED = "REJECTED";
+    private static final System.Logger LOG = System.getLogger(TransactionalReservationStore.class.getName());
     private final JpaReservationProcessRepository processes;
-    private final JpaReservationInboxRepository inbox;
+    private final JpaProcessedReservationEventRepository events;
     private final ReservationPersistenceMapper mapper;
     private final Clock clock;
     private final JpaPhoneSubmissionRepository phones;
-    private final ReservationActionParser parser;
-
-    public TransactionalReservationStore(
-            JpaReservationProcessRepository processes,
-            JpaReservationInboxRepository inbox,
-            ReservationPersistenceMapper mapper,
-            Clock clock,
-            JpaPhoneSubmissionRepository phones,
-            ReservationActionParser parser) {
-        this.processes = processes;
-        this.inbox = inbox;
-        this.mapper = mapper;
-        this.clock = clock;
-        this.phones = phones;
-        this.parser = parser;
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 10)
     public List<UUID> dueRecovery(Instant now, Duration initialDelay, int limit) {
@@ -73,11 +54,14 @@ public class TransactionalReservationStore {
 
     /** Solo programa una revisión; cualquier efecto posterior necesita su permiso de negocio. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts,
-            Duration retry, Duration cooldown) {
+    public Optional<ReservationProcess> beginRecovery(UUID id, Instant now, Duration retry, Duration initialDelay) {
         var entity = processes.findById(id.toString()).orElseThrow();
-        if (!entity.recoveryDue(now, cooldown)) return Optional.empty();
-        entity.scheduleRecovery(now, attempts, retry, cooldown);
+        if (!entity.recoveryDue(now, initialDelay)) return Optional.empty();
+        var next = now.plus(retry);
+        // Una revisión previa al vencimiento no posterga su comprobación hasta otro intervalo.
+        if (entity.getExpiresAt() != null && now.isBefore(entity.getExpiresAt())
+                && entity.getExpiresAt().isBefore(next)) next = entity.getExpiresAt();
+        entity.scheduleRecovery(next);
         processes.flush();
         return Optional.of(mapper.toDomain(entity));
     }
@@ -86,27 +70,6 @@ public class TransactionalReservationStore {
     public void deferRecovery(UUID id, Instant nextAttempt) {
         processes.findById(id.toString()).ifPresent(value -> value.deferRecovery(nextAttempt));
         processes.flush();
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 10)
-    public List<Long> deferredKnown(int limit) {
-        return inbox.deferredKnown(PageRequest.of(0, limit));
-    }
-
-    /** El recibo ya estaba confirmado al broker; solo se resuelve su efecto pendiente en SQL. */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public void replayDeferred(long id) {
-        var receipt = inbox.lockedReceipt(id).orElse(null);
-        if (receipt == null || !receipt.awaitsAssociation()) return;
-        var delivery = parser.parse(receipt.origin(), receipt.getPayload());
-        if (delivery.action() == null || delivery.rejection() != null
-                || !receipt.getFingerprint().equals(delivery.fingerprint())) {
-            receipt.classify(REJECTED, "INVALID_STORED_ACTION", null);
-        } else {
-            processes.findByCentralProcessId(delivery.action().correlation().centralProcessId())
-                    .ifPresent(value -> apply(value, receipt, delivery.action()));
-        }
-        inbox.flush();
     }
 
     /** Una sola instantánea SQL para que un cierre concurrente no duplique el pendiente. */
@@ -196,7 +159,7 @@ public class TransactionalReservationStore {
         var entity = processes.findById(before.processId().toString()).orElseThrow();
         var process = mapper.toDomain(entity);
         var after =
-                process.phase().isFinal() || process.abandonmentPending()
+                process.phase().isFinal()
                         ? before.finish(now, "PROCESS_CLOSED")
                         : before.beginAttempt(now, attempts, retry, cooldown);
         row.apply(after);
@@ -233,37 +196,41 @@ public class TransactionalReservationStore {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
-            Integer retryVersion, Instant now, UUID writeId) {
+    public ReservationProcess requestCancellation(long ownerId, UUID id, Instant now) {
         var entity = processes.findById(id.toString())
                 .filter(value -> value.getOwnerId() == ownerId)
                 .orElseThrow(() -> new ReservationCancellationException(
                         ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
         var before = mapper.toDomain(entity);
-        var after = before.requestCancellation(kind, retryVersion, now);
-        if (after.equals(before)) return new CancellationAcceptance(before, false);
-        entity.apply(after, writeId, now);
-        if (after.abandonmentPending()) closeActive(entity.getId(), now, "PROCESS_ABANDONED");
+        var after = before.requestCancellation();
+        if (after.equals(before)) return before;
+        entity.apply(after, UUID.randomUUID(), now);
+        entity.scheduleRecovery(now);
         processes.flush();
-        return new CancellationAcceptance(mapper.toDomain(entity), true);
+        return mapper.toDomain(entity);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 10)
-    public List<UUID> dueCancellations(Instant now, int limit) {
-        return processes.dueCancellations(now, PageRequest.of(0, limit)).stream()
-                .map(UUID::fromString).toList();
+    /** Una sola fecha compartida limita la reclamación; no representa un ciclo histórico. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
+    public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
+            Duration budget) {
+        var entity = processes.findById(id.toString()).orElseThrow();
+        var process = mapper.toDomain(entity);
+        if (process.cancellation() == null || !entity.recoveryDue(now, Duration.ZERO)) return Optional.empty();
+        entity.apply(process, UUID.randomUUID(), now);
+        entity.scheduleRecovery(now.plus(budget));
+        processes.flush();
+        return Optional.of(mapper.toDomain(entity));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
-            Duration budget, UUID writeId) {
+    public void finishCancellationAttempt(UUID id, UUID writeId, boolean requireRetry,
+            String failure, Instant now, Instant nextReview) {
         var entity = processes.findById(id.toString()).orElseThrow();
-        var before = mapper.toDomain(entity);
-        var after = before.claimCancellation(now, budget);
-        if (after.equals(before)) return Optional.empty();
-        entity.apply(after, writeId, now);
+        if (!entity.getWriteId().equals(writeId.toString()) || entity.getCancellationStatus() == null) return;
+        if (requireRetry) entity.apply(mapper.toDomain(entity).requireCancellationRetry(failure), writeId, now);
+        entity.scheduleRecovery(nextReview);
         processes.flush();
-        return Optional.of(mapper.toDomain(entity));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
@@ -301,21 +268,20 @@ public class TransactionalReservationStore {
         return processes.findPending(ownerId).map(mapper::toDomain);
     }
 
-    /** El estado ajeno CONFIRMING nunca concede permiso de transporte a este reclamante. */
+    /** El estado ajeno CONFIRMATION_PENDING nunca concede permiso de transporte a este reclamante. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now, UUID writeId) {
+    public Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now) {
         var entity = processes.findById(id.toString()).orElseThrow();
         var before = mapper.toDomain(entity);
-        if (before.phase() != ReservationPhase.HELD || before.abandonmentPending()
-                || !now.isBefore(before.hold().expiresAt())) return Optional.empty();
-        entity.apply(before.beginConfirmation(), writeId, now);
+        if (before.phase() != ReservationPhase.HELD || !now.isBefore(before.hold().expiresAt())) return Optional.empty();
+        entity.apply(before.beginConfirmation(), UUID.randomUUID(), now);
         processes.flush();
         return Optional.of(mapper.toDomain(entity));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
     public ReservationProcess update(
-            UUID id, UUID writeId, UnaryOperator<ReservationProcess> change) {
+            UUID id, UnaryOperator<ReservationProcess> change) {
         var entity = processes.findById(id.toString()).orElseThrow();
         var before = mapper.toDomain(entity);
         var after = change.apply(before);
@@ -326,75 +292,32 @@ public class TransactionalReservationStore {
                 || !before.patient().equals(after.patient())) {
             throw new IllegalArgumentException("Cannot change reservation selection or owner");
         }
-        entity.apply(after, writeId, clock.instant());
+        entity.apply(after, UUID.randomUUID(), clock.instant());
         processes.flush();
         return mapper.toDomain(entity);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true, timeout = 10)
-    public boolean hasReceipt(ReservationDelivery delivery) {
-        var origin = delivery.origin();
-        var receipt = inbox.findDelivery(origin.topic(), origin.partition(), origin.offset());
-        if (receipt.isPresent()) {
-            return receipt.get().getFingerprint().equals(delivery.fingerprint());
-        }
-        if (delivery.action() == null) {
-            return false;
-        }
-        return inbox.findByEventId(delivery.action().correlation().eventId())
-                .filter(value -> value.getFingerprint().equals(delivery.fingerprint()))
-                .isPresent();
-    }
-
-    /** Recibo y cambio son indivisibles; un registro inválido también se conserva antes del ACK. */
+    /**
+     * Deduplica por eventId y modifica el proceso en la misma transacción.
+     * Un proceso desconocido se ignora definitivamente: la confirmación central solo se envía
+     * después de persistir sus IDs. No se importan reservas ni se conservan mensajes para replay.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 10)
-    public void accept(ReservationDelivery delivery) {
-        var origin = delivery.origin();
-        if (inbox.findDelivery(origin.topic(), origin.partition(), origin.offset()).isPresent()) {
-            return;
-        }
-        var action = delivery.action();
-        String eventId = action == null ? null : action.correlation().eventId();
-        var previous =
-                eventId == null
-                        ? Optional.<ReservationInboxEntity>empty()
-                        : inbox.findByEventId(eventId);
-        if (previous.isPresent()) {
-            if (previous.get().getFingerprint().equals(delivery.fingerprint())) {
-                return;
-            }
-            var rejected = new ReservationInboxEntity(delivery, null, clock.instant());
-            rejected.classify(REJECTED, "EVENT_ID_CONFLICT", null);
-            inbox.saveAndFlush(rejected);
-            return;
-        }
-        var receipt = new ReservationInboxEntity(delivery, eventId, clock.instant());
-        if (action == null || delivery.rejection() != null) {
-            receipt.classify(REJECTED, delivery.rejection(), null);
+    public void accept(ReservationAction action) {
+        String eventId = action.correlation().eventId();
+        if (events.existsById(eventId)) return;
+        var entity = processes.findByCentralProcessId(action.correlation().centralProcessId());
+        if (entity.isPresent()) {
+            apply(entity.get(), action);
         } else {
-            var entity = processes.findByCentralProcessId(action.correlation().centralProcessId());
-            if (entity.isEmpty()) {
-                receipt.classify("DEFERRED", "UNKNOWN_PROCESS", null);
-            } else {
-                apply(entity.get(), receipt, action);
-            }
+            LOG.log(System.Logger.Level.WARNING, "Reservation action for unknown process ignored");
         }
-        inbox.saveAndFlush(receipt);
+        events.markProcessed(eventId);
     }
 
-    private void apply(
-            ReservationProcessEntity entity,
-            ReservationInboxEntity receipt,
-            ReservationAction action) {
+    private void apply(ReservationProcessEntity entity, ReservationAction action) {
+        if (action.type() == ReservationActionType.OTHER) return;
         var before = mapper.toDomain(entity);
-        if (!before.hold().holdId().equals(action.correlation().holdId())) {
-            receipt.classify(REJECTED, "HOLD_MISMATCH", null);
-            return;
-        }
-        if (action.type() == ReservationActionType.OTHER) {
-            receipt.classify("DEFERRED", "UNHANDLED_ACTION", entity.getId());
-            return;
-        }
         var after = before.apply(action, clock.instant());
         if (!after.equals(before)) {
             entity.apply(after, UUID.randomUUID(), clock.instant());
@@ -406,6 +329,5 @@ public class TransactionalReservationStore {
             }
             processes.flush();
         }
-        receipt.classify(after.equals(before) ? "IGNORED" : "APPLIED", null, entity.getId());
     }
 }

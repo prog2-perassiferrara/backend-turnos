@@ -19,8 +19,7 @@ public record PhoneSubmission(
         Instant closedAt,
         int cycleAttempt,
         Instant nextAttemptAt,
-        String lastFailure,
-        long version) {
+        String lastFailure) {
     private static final Pattern PHONE = Pattern.compile("\\+?\\d{7,15}");
 
     public PhoneSubmission {
@@ -29,7 +28,6 @@ public record PhoneSubmission(
         Objects.requireNonNull(event);
         Objects.requireNonNull(expiresAt);
         if (cycleAttempt < 0
-                || version < 0
                 || publishedAt == null && closedAt == null && nextAttemptAt == null) {
             throw new IllegalArgumentException("Invalid phone submission progress");
         }
@@ -92,7 +90,7 @@ public record PhoneSubmission(
                         phoneNumber,
                         now);
         return new PhoneSubmission(
-                id, process.id(), event, process.hold().expiresAt(), null, null, 0, now, null, 0);
+                id, process.id(), event, process.hold().expiresAt(), null, null, 0, now, null);
     }
 
     /**
@@ -130,15 +128,14 @@ public record PhoneSubmission(
                 null,
                 exhausted ? 0 : count,
                 now.plus(exhausted ? cooldown : retry),
-                "PHONE_PUBLICATION_UNCERTAIN",
-                version);
+                "PHONE_PUBLICATION_UNCERTAIN");
     }
 
     /** Un ACK tardío nunca reabre una respuesta resuelta. */
     public PhoneSubmission received(Instant now) {
         if (closedAt != null || publishedAt != null) return this;
         return new PhoneSubmission(
-                id, processId, event, expiresAt, now, null, cycleAttempt, null, null, version);
+                id, processId, event, expiresAt, now, null, cycleAttempt, null, null);
     }
 
     /** Detiene esta publicación; el proceso conserva su evidencia central independiente. */
@@ -153,8 +150,7 @@ public record PhoneSubmission(
                 now,
                 cycleAttempt,
                 null,
-                reason,
-                version);
+                reason);
     }
 
     @Override

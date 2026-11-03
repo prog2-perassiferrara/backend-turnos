@@ -1,18 +1,14 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.adapter;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
 import java.sql.SQLException;
-import com.prog2.appointment.reservation.domain.enums.CancellationKind;
-import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
-import com.prog2.appointment.reservation.domain.exception.ReservationCancellationException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Supplier;
-import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
-import com.prog2.appointment.reservation.domain.exception.ReservationPhoneException;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 import com.prog2.appointment.reservation.domain.model.CentralAppointment;
 import com.prog2.appointment.reservation.domain.model.SubmitPhoneRequest;
@@ -25,22 +21,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionException;
 import com.prog2.appointment.reservation.domain.exception.ReservationConflictException;
 import com.prog2.appointment.reservation.domain.exception.ReservationStorageException;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
+import com.prog2.appointment.reservation.domain.model.ReservationAction;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository;
 import com.prog2.appointment.reservation.infrastructure.persistence.service.TransactionalReservationStore;
 
 /**
- * Adapter de persistencia: verifica escrituras ambiguas después del proxy, sin repetir efectos
- * externos.
+ * Adapter de persistencia: solo un retorno normal del proxy permite continuar.
+ * Los errores de commit se propagan; recovery relee el estado sin atribuir autoría del commit.
  */
 @Component
+@RequiredArgsConstructor
 public final class JpaReservationProcessAdapter implements ReservationProcessRepository {
     private final TransactionalReservationStore store;
-
-    public JpaReservationProcessAdapter(TransactionalReservationStore store) {
-        this.store = store;
-    }
 
     @Override
     public OwnReservationPage readOwn(long ownerId, int page, int size) {
@@ -70,71 +63,33 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
         try {
             return new BeginResult(store.create(candidate), true);
         } catch (DataAccessException | TransactionException failure) {
+            if (!duplicate(failure)) throw new ReservationStorageException();
+            // Un conflicto único nunca otorga permiso de creación, aunque exista la misma fila.
             var same = find(candidate.id());
             if (same.isPresent()) {
-                if (same.get().ownerId() != candidate.ownerId()) {
-                    throw new ReservationConflictException();
-                }
-                boolean ownWrite =
-                        !duplicate(failure) && same.get().writeId().equals(candidate.writeId());
-                return new BeginResult(same.get(), ownWrite);
+                if (same.get().ownerId() != candidate.ownerId()) throw new ReservationConflictException();
+                return new BeginResult(same.get(), false);
             }
-            if (duplicate(failure)) {
-                return new BeginResult(
-                        findPending(candidate.ownerId())
-                                .orElseThrow(ReservationStorageException::new),
-                        false);
-            }
-            throw new ReservationStorageException();
+            return new BeginResult(findPending(candidate.ownerId())
+                    .orElseThrow(ReservationStorageException::new), false);
         }
     }
 
     @Override
     public ReservationProcess update(UUID id, UnaryOperator<ReservationProcess> change) {
-        UUID writeId = UUID.randomUUID();
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                return store.update(id, writeId, change);
-            } catch (OptimisticLockingFailureException _) {
-                /* Releer en una transacción nueva, sin repetir HTTP. */
-            } catch (DataAccessException | TransactionException _) {
-                return find(id).filter(value -> value.writeId().equals(writeId))
-                        .orElseThrow(ReservationStorageException::new);
-            }
-        }
-        throw new ReservationStorageException();
+        return write(() -> store.update(id, change));
     }
 
     @Override
-    public void accept(ReservationDelivery delivery) {
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                store.accept(delivery);
-                return;
-            } catch (OptimisticLockingFailureException _) {
-                /* El recibo también revierte; volver a leer ambos. */
-            } catch (DataAccessException | TransactionException failure) {
-                try {
-                    if (store.hasReceipt(delivery)) {
-                        return;
-                    }
-                } catch (DataAccessException | TransactionException _) {
-                    throw new ReservationStorageException();
-                }
-                if (!duplicate(failure)) {
-                    throw new ReservationStorageException();
-                }
-            }
-        }
-        throw new ReservationStorageException();
+    public void accept(ReservationAction action) {
+        // Incluso ante un commit incierto se propaga el fallo; redelivery verificará el eventId.
+        write(() -> { store.accept(action); return null; });
     }
+
 
     @Override
     public Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now) {
-        UUID writeId = UUID.randomUUID();
-        return cancellationWrite(() -> store.beginInitialConfirmation(id, now, writeId),
-                () -> find(id).filter(value -> value.writeId().equals(writeId)
-                        && value.phase() == ReservationPhase.CONFIRMING));
+        return write(() -> store.beginInitialConfirmation(id, now));
     }
 
     @Override
@@ -143,21 +98,13 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
     }
 
     @Override
-    public Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts,
-            Duration retry, Duration cooldown) {
-        return write(() -> store.beginRecovery(id, now, attempts, retry, cooldown));
+    public Optional<ReservationProcess> beginRecovery(UUID id, Instant now, Duration retry, Duration initialDelay) {
+        return write(() -> store.beginRecovery(id, now, retry, initialDelay));
     }
 
     @Override
     public void deferRecovery(UUID id, Instant nextAttempt) {
         write(() -> { store.deferRecovery(id, nextAttempt); return null; });
-    }
-
-    @Override
-    public void replayDeferredKnown(int limit) {
-        for (var id : read(() -> store.deferredKnown(limit))) {
-            write(() -> { store.replayDeferred(id); return null; });
-        }
     }
 
     @Override
@@ -174,31 +121,12 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
             } catch (OptimisticLockingFailureException _) {
                 // No hubo commit: repetir solo la aceptación local sobre datos actuales.
             } catch (DataAccessException | TransactionException failure) {
-                var saved = committedPhone(ownerId, processId, request);
-                if (saved.isPresent()) return saved.get();
                 if (!duplicate(failure)) throw new ReservationStorageException();
+                // Solo un conflicto único conocido permite repetir la validación local, nunca un
+                // commit incierto. El UUID de la respuesta sigue siendo la clave de idempotencia.
             }
         }
         throw new ReservationStorageException();
-    }
-
-    private Optional<PhoneResult> committedPhone(
-            long ownerId, UUID processId, SubmitPhoneRequest request) {
-        var own =
-                find(processId)
-                        .filter(value -> value.ownerId() == ownerId)
-                        .orElseThrow(
-                                () ->
-                                        new ReservationPhoneException(
-                                                ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
-        return findPhone(request.requestId())
-                .map(
-                        phone -> {
-                            if (!phone.matches(processId, request))
-                                throw new ReservationPhoneException(
-                                        ReservationFailure.REQUEST_ID_CONFLICT);
-                            return new PhoneResult(own, phone, false);
-                        });
     }
 
     @Override
@@ -237,55 +165,35 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
     }
 
     @Override
-    public CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
-            Integer retryVersion, Instant now) {
-        UUID writeId = UUID.randomUUID();
-        return cancellationWrite(
-                () -> store.requestCancellation(ownerId, id, kind, retryVersion, now, writeId),
-                () -> committedCancellation(ownerId, id, kind, retryVersion, writeId));
-    }
-
-    private CancellationAcceptance committedCancellation(long ownerId, UUID id, CancellationKind kind,
-            Integer retryVersion, UUID writeId) {
-        var current = find(id).filter(value -> value.ownerId() == ownerId)
-                .orElseThrow(() -> new ReservationCancellationException(
-                        ReservationFailure.RESERVATION_PROCESS_NOT_FOUND));
-        var progress = current.cancellation();
-        if (progress == null || progress.kind() != kind
-                || retryVersion != null && progress.retryVersion() <= retryVersion) {
-            throw new ReservationStorageException();
-        }
-        return new CancellationAcceptance(current, current.writeId().equals(writeId));
-    }
-
-    @Override
-    public List<UUID> dueCancellations(Instant now, int limit) {
-        return read(() -> store.dueCancellations(now, limit));
+    public ReservationProcess requestCancellation(long ownerId, UUID id, Instant now) {
+        return write(() -> store.requestCancellation(ownerId, id, now));
     }
 
     @Override
     public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now, Duration budget) {
-        UUID writeId = UUID.randomUUID();
-        return cancellationWrite(() -> store.beginCancellationAttempt(id, now, budget, writeId),
-                () -> find(id).filter(value -> value.writeId().equals(writeId)));
+        return write(() -> store.beginCancellationAttempt(id, now, budget));
+    }
+
+    @Override
+    public void finishCancellationAttempt(UUID id, UUID writeId, boolean requireRetry, String failure,
+            Instant now, Instant nextReview) {
+        write(() -> { store.finishCancellationAttempt(id, writeId, requireRetry, failure, now, nextReview); return null; });
     }
 
     @Override
     public ReservationProcess confirmCancellation(UUID id, CancellationEvidence evidence, Instant now) {
-        return cancellationWrite(() -> store.confirmCancellation(id, evidence, now),
-                () -> find(id).filter(value -> value.phase() == ReservationPhase.CANCELLED
-                        && evidence.belongsTo(value)).orElseThrow(ReservationStorageException::new));
+        return write(() -> store.confirmCancellation(id, evidence, now));
     }
 
     /** Repite solo transacciones locales revertidas, nunca el POST central. */
-    private static <T> T cancellationWrite(Supplier<T> operation, Supplier<T> ambiguous) {
+    private static <T> T write(Supplier<T> operation) {
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
                 return operation.get();
             } catch (OptimisticLockingFailureException _) {
                 // Releer y volver a evaluar las condiciones en otra transacción.
             } catch (DataAccessException | TransactionException _) {
-                return ambiguous.get();
+                throw new ReservationStorageException();
             }
         }
         throw new ReservationStorageException();
@@ -297,19 +205,6 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
         } catch (DataAccessException | TransactionException _) {
             throw new ReservationStorageException();
         }
-    }
-
-    private static <T> T write(Supplier<T> operation) {
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                return operation.get();
-            } catch (OptimisticLockingFailureException _) {
-                /* Nueva transacción en cada intento. */
-            } catch (DataAccessException | TransactionException _) {
-                throw new ReservationStorageException();
-            }
-        }
-        throw new ReservationStorageException();
     }
 
     private static boolean duplicate(Throwable failure) {

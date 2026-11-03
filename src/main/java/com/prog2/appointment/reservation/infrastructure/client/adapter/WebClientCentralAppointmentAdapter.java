@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.domain.model.ProfessionalName;
 
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
@@ -19,55 +20,45 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Arrays;
 import java.util.HashSet;
-import com.prog2.appointment.reservation.domain.model.CentralAppointmentsBatch;
-import com.prog2.appointment.reservation.domain.enums.VerificationStatus;
 
-/** Lecturas puntuales y paginadas acotadas; ausencia de coincidencia nunca demuestra liberación. */
+/** Busca evidencia exacta en páginas válidas; no certifica el historial posterior a la coincidencia. */
+@RequiredArgsConstructor
 public final class WebClientCentralAppointmentAdapter implements CentralAppointmentGateway {
     private final WebClient client;
     private final TechnicalAccessUseCase access;
     private final Duration timeout;
 
-    public WebClientCentralAppointmentAdapter(
-            WebClient client, TechnicalAccessUseCase access, Duration timeout) {
-        this.client = client;
-        this.access = access;
-        this.timeout = timeout;
-    }
-
     @Override
-    public CentralAppointmentsBatch listOwn(long ownerId) {
+    public Optional<CentralAppointment> find(ReservationProcess process) {
         var matches = new HashMap<String, CentralAppointment>();
         var conflicts = new HashSet<String>();
-        var status = VerificationStatus.VERIFIED;
         Long expectedTotal = null;
         long deadline = System.nanoTime() + timeout.multipliedBy(2).toNanos();
         try {
             String token = access.getAccess().token().value();
-            String patient = "user-" + ownerId;
+            String patient = process.patient().externalPatientId();
             for (int page = 0; page < 3; page++) {
                 var result = page(patient, page, token, deadline);
-                if (result == null) return batch(matches, VerificationStatus.INCONCLUSIVE);
-                if (!collect(result, patient, matches, conflicts))
-                    status = VerificationStatus.INCONCLUSIVE;
+                if (result == null) return Optional.empty();
+                if (!collect(result, patient, matches, conflicts)) return Optional.empty();
                 long total = Long.parseLong(result.total());
                 if (!validPage(result, page, total, expectedTotal)) {
-                    return batch(matches, VerificationStatus.INCONCLUSIVE);
+                    return Optional.empty();
                 }
                 expectedTotal = total;
-                if (!result.hasNext()) return batch(matches, status);
+                var match = matches.values().stream().filter(value -> value.belongsTo(process)).findFirst();
+                if (match.isPresent() || !result.hasNext()) return match;
             }
-            return batch(matches, VerificationStatus.INCONCLUSIVE);
+            return Optional.empty();
         } catch (IllegalArgumentException _) {
-            return batch(matches, VerificationStatus.INCONCLUSIVE);
+            return Optional.empty();
         } catch (RuntimeException _) {
-            return batch(matches, VerificationStatus.UNAVAILABLE);
+            throw unavailable();
         }
     }
 
@@ -138,24 +129,10 @@ public final class WebClientCentralAppointmentAdapter implements CentralAppointm
                 .block(Duration.ofNanos(remaining));
     }
 
-    private static CentralAppointmentsBatch batch(
-            Map<String, CentralAppointment> matches, VerificationStatus status) {
-        return new CentralAppointmentsBatch(new ArrayList<>(matches.values()), status);
-    }
-
     private record PageResult(List<CentralAppointmentResponse> rows, String total, String links) {
         boolean hasNext() {
             return links != null && (links.contains("rel=\"next\"") || links.contains("rel=next"));
         }
-    }
-
-    @Override
-    public Optional<CentralAppointment> find(ReservationProcess process) {
-        // Compartir paginación, plazo y deduplicación; no depender de filtros de fecha externos.
-        var batch = listOwn(process.ownerId());
-        if (batch.status() == VerificationStatus.UNAVAILABLE) throw unavailable();
-        if (batch.status() != VerificationStatus.VERIFIED) return Optional.empty();
-        return batch.appointments().stream().filter(value -> value.belongsTo(process)).findFirst();
     }
 
     private static CentralAppointment appointment(CentralAppointmentResponse item) {

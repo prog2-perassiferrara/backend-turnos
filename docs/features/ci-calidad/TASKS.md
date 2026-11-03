@@ -1,5 +1,7 @@
 # TASKS: CI y calidad
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Referencias:** [SPEC aprobada](SPEC.md), [PLAN aprobado](PLAN.md).
 **Estado:** Implementado y validado localmente; validación remota pendiente.
 **Aprobación y autorización:** PLAN aprobado el 2026-10-10; implementación autorizada por el usuario.
@@ -38,10 +40,10 @@
 
 ## Evidencia
 
-- `./mvnw -B -ntp clean verify`: BUILD SUCCESS el 2026-10-10, 11:04:31 -03:00; diez pruebas, cero fallos, errores u omisiones. Logs en `/tmp/turnos-ci-verify.log`; Surefire en `target/surefire-reports/`. Docker autorizado y MySQL 8.4.8 temporal de Testcontainers, sin `.env` ni servicios reales.
+- `./mvnw -B -ntp clean verify`: BUILD SUCCESS el 2026-10-10, 11:04:31 -03:00; diez pruebas, cero fallos, errores u omisiones. Logs en `turnos-ci-verify.log`; Surefire en `target/surefire-reports/`. Docker autorizado y MySQL 8.4.8 temporal de Testcontainers, sin `.env` ni servicios reales.
 - JaCoCo 0.8.15: XML válido e HTML en `target/site/jacoco/`, dos clases. Líneas: 8 cubiertas y 2 sin cubrir (80 %); ramas: 4 cubiertas y 0 sin cubrir (100 %). Son métricas locales del setup, no cobertura de funcionalidades futuras ni importación remota demostrada.
 - Logs revisados: fallos de arranque esperados por las pruebas negativas; advertencias de carga dinámica de Byte Buddy y un HTTP 401 al consultar metadata opcional de MavenFeed. No impidieron el build ni la generación de reportes; no se alteró configuración ajena para ocultarlas.
-- `help:describe` del plugin `org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211`, goal `sonar`: BUILD SUCCESS. Plugin resuelto sin credenciales ni publicación de análisis; log en `/tmp/turnos-ci-scanner-plugin.log`.
+- `help:describe` del plugin `org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211`, goal `sonar`: BUILD SUCCESS. Plugin resuelto sin credenciales ni publicación de análisis; log en `turnos-ci-scanner-plugin.log`.
 - Workflow validado sin hallazgos por actionlint 1.7.12, descargado de su release oficial en `/tmp` y verificado con SHA-256. SHA de checkout v7.0.1 y setup-java v6.0.1 comprobados mediante la API oficial de GitHub.
 - Revisados filtro main, `edited` sin condiciones especiales, concurrencia general, forks sin secretos, ausencia de servicios MySQL adicionales y propagación de errores. Bloque del scanner aceptado por `bash -n`; ejecutado con token vacío terminó con código 1 y diagnóstico antes de invocar Maven. No se probó un token real ni un Quality Gate incumplido.
 - Enlaces locales de README/SPEC/PLAN/TASKS comprobados y `git diff --check` sin errores. Código Java y Catálogo sin modificaciones. No se hicieron operaciones Git que modifiquen estado.

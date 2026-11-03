@@ -1,5 +1,6 @@
 package com.prog2.appointment.user.infrastructure.persistence.service;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Clock;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -17,17 +18,11 @@ import com.prog2.appointment.user.infrastructure.persistence.repository.JpaUserA
  * El proxy confirma antes de devolver al adaptador, que puede traducir también un fallo de commit.
  */
 @Component
+@RequiredArgsConstructor
 public class TransactionalUserAccountStore {
     private final JpaUserAccountRepository repository;
     private final UserAccountMapper mapper;
     private final Clock clock;
-
-    public TransactionalUserAccountStore(JpaUserAccountRepository repository, UserAccountMapper mapper,
-            Clock clock) {
-        this.repository = repository;
-        this.mapper = mapper;
-        this.clock = clock;
-    }
 
     /**
      * Cuenta y colecciones se confirman juntas; una colisión revierte toda esta transacción.

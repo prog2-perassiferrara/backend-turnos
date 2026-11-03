@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.application.usecases;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.exception.ReservationStorageException;
 import com.prog2.appointment.reservation.domain.ports.in.PublishPendingPhonesUseCase;
@@ -10,6 +11,7 @@ import java.time.Clock;
 import java.time.Duration;
 
 /** Procesa lotes pequeños; registra cada intención antes de cruzar la frontera Kafka. */
+@RequiredArgsConstructor
 public final class PublishPendingPhonesUseCaseImpl implements PublishPendingPhonesUseCase {
     private final ReservationProcessRepository repository;
     private final PhonePublicationGateway publisher;
@@ -17,21 +19,6 @@ public final class PublishPendingPhonesUseCaseImpl implements PublishPendingPhon
     private final int attempts;
     private final Duration retry;
     private final Duration cooldown;
-
-    public PublishPendingPhonesUseCaseImpl(
-            ReservationProcessRepository repository,
-            PhonePublicationGateway publisher,
-            Clock clock,
-            int attempts,
-            Duration retry,
-            Duration cooldown) {
-        this.repository = repository;
-        this.publisher = publisher;
-        this.clock = clock;
-        this.attempts = attempts;
-        this.retry = retry;
-        this.cooldown = cooldown;
-    }
 
     @Override
     public void publishPending() {

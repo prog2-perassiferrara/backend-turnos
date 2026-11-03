@@ -1,5 +1,12 @@
 # SPEC: Iniciar reserva con hold y confirmación inicial
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+**Ajuste posterior aprobado, 2026-11-02:** HOLD_PENDING reúne las intenciones de creación sin IDs reconocidos; CONFIRMATION_PENDING reúne las confirmaciones pendientes de aceptación inicial. Tras reiniciar, ninguna habilita repetir el POST. FAILED reúne rechazo de creación e intento sin IDs abandonado, conservando su causa sin acreditar liberación central. Un rechazo de teléfono sigue siendo corregible en WAITING_FOR_PHONE. Se conservan propietario, identificadores y plazos existentes. Confirmado y autorizado a implementar durante la revisión de simplificación. RF/CA vigentes conservados; solución y regresión en PLAN/TASKS.
+
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Revisión:** 2026-10-29. Issue [#9](https://github.com/prog2-perassiferrara/backend-turnos/issues/9), [CU-04 aprobado](../../use-cases/CU-04-iniciar-reserva.md).
 **Aprobación:** explícita del usuario el 2026-10-29. No autoriza implementar.
@@ -7,31 +14,6 @@
 **Ajuste autorizado, 2026-10-30:** el registro exige nombres no blancos de 2 a 50 caracteres, según el ajuste confirmado de [registro/autenticación](../registro-autenticacion/SPEC.md). Evita crear perfiles incompatibles con reservas; RF-01/CA-01 conservan la comprobación previa al hold para cuentas existentes. No cambia la autenticación ni el contrato central.
 
 **Ajuste autorizado, 2026-10-30:** la respuesta docente sobre creación incierta sin IDs permite abandonar ese intento y consultar ocupaciones. `HELD` requiere esperar hasta su `expiresAt` y volver a consultar, sin atribuir propiedad; `CONFIRMED` impide crear; ausencia de ocupación habilita un nuevo intento limitado, sujeto a 409. No se libera por diez minutos locales. Actualización e implementación solicitadas explícitamente por el usuario; afecta RF-03/RF-04/RF-07/RF-08 y CA-03/CA-06/CA-07/CA-09. Fuente: [aclaración de cátedra](../../../../dudas_Slack.md#duda-18-resuelta).
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo según el enunciado y los contratos del backend.
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución.
--->
-
-<!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto y los contratos pertinentes. Inspecciona el
-  repositorio para comprobar el comportamiento actual.
-- Completa esta spec con la persona: investiga lo comprobable y consulta las
-  decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
-- No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
-  confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Considera errores, concurrencia, integración y recuperación cuando apliquen,
-  sin ampliar el alcance automáticamente.
-- No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
-  esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
-- Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
-- Un documento completo no está aprobado automáticamente. Solicita aprobación
-  antes de marcarlo como Aprobada. No implementes durante esta etapa.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Qué construimos y para quién
 

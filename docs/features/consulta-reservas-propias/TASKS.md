@@ -1,5 +1,10 @@
 # TASKS: Consultar reservas y procesos propios
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
 **Referencias:** [SPEC aprobada](SPEC.md), [PLAN aprobado](PLAN.md), [#12/CU-07](https://github.com/prog2-perassiferrara/backend-turnos/issues/12).
 **Estado:** Implementación y validación local completas; feedback remoto pendiente.
 **Aprobaciones:** SPEC y PLAN aprobados explícitamente el 2026-11-01. TASKS aprobadas explícitamente el 2026-11-01.

@@ -1,34 +1,25 @@
 package com.prog2.appointment.reservation.domain.enums;
 
-/** Progreso local: una intención persistida no acredita el resultado del POST central. */
+/** Progreso durable: una intención persistida no acredita el resultado del POST central. */
 public enum ReservationPhase {
-    CREATING_HOLD,
-    HOLD_UNCERTAIN,
+    HOLD_PENDING,
     HELD,
-    CONFIRMING,
-    CONFIRMATION_UNCERTAIN,
+    CONFIRMATION_PENDING,
     WAITING_FOR_REQUEST,
     WAITING_FOR_PHONE,
     PHONE_QUEUED,
     WAITING_FOR_RESULT,
-    FAILED,
     RECONCILIATION_REQUIRED,
-    HOLD_ATTEMPT_ABANDONED,
-    REJECTED,
+    FAILED,
     EXPIRED,
     CONFIRMED,
     CANCELLED;
 
     /**
-     * @return si existe un cierre local, independiente de un abandono pendiente; no acredita cierre
+     * @return si existe un cierre local; no acredita por sí solo cierre
      *     central
      */
     public boolean isFinal() {
-        return this == HOLD_ATTEMPT_ABANDONED
-                || this == FAILED
-                || this == REJECTED
-                || this == EXPIRED
-                || this == CONFIRMED
-                || this == CANCELLED;
+        return this == FAILED || this == EXPIRED || this == CONFIRMED || this == CANCELLED;
     }
 }

@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.entity;
 
+import lombok.Getter;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -18,51 +19,67 @@ import jakarta.persistence.Version;
 public class ReservationProcessEntity {
     @Id
     @Column(name = "id", length = 36)
+    @Getter
     private String id;
 
     @Column(name = "owner_id")
+    @Getter
     private long ownerId;
 
     @Column(name = "professional_id")
+    @Getter
     private long professionalId;
 
     @Column(name = "appointment_date")
+    @Getter
     private LocalDate appointmentDate;
 
     @Column(name = "start_time")
+    @Getter
     private LocalTime startTime;
 
     @Column(name = "patient_first_name", length = 100)
+    @Getter
     private String patientFirstName;
 
     @Column(name = "patient_last_name", length = 100)
+    @Getter
     private String patientLastName;
 
     @Column(name = "professional_first_name", length = 255)
+    @Getter
     private String professionalFirstName;
 
     @Column(name = "professional_last_name", length = 255)
+    @Getter
     private String professionalLastName;
 
     @Column(name = "phase", length = 40)
+    @Getter
     private String phase;
 
     @Column(name = "hold_id", length = 255)
+    @Getter
     private String holdId;
 
     @Column(name = "central_process_id", length = 255)
+    @Getter
     private String centralProcessId;
 
     @Column(name = "expires_at")
+    @Getter
     private Instant expiresAt;
 
     @Column(name = "request_event_id", length = 255)
+    @Getter
     private String requestEventId;
 
     @Column(name = "reservation_id")
+    @Getter
     private Long reservationId;
 
     @Column(name = "reason_code", length = 64)
+    @Getter
     private String reasonCode;
 
     @Version
@@ -70,37 +87,25 @@ public class ReservationProcessEntity {
     private Long version;
 
     @Column(name = "write_id", length = 36)
+    @Getter
     private String writeId;
 
     @Column(name = "closed_at")
+    @Getter
     private Instant closedAt;
 
-    @Column(name = "abandonment_pending")
-    private boolean abandonmentPending;
 
-    @Column(name = "cancellation_kind", length = 16)
-    private String cancellationKind;
     @Column(name = "cancellation_status", length = 16)
+    @Getter
     private String cancellationStatus;
-    @Column(name = "cancellation_requested_at")
-    private Instant cancellationRequestedAt;
-    @Column(name = "cancellation_retry_version")
-    private int cancellationRetryVersion;
-    @Column(name = "cancellation_attempts")
-    private int cancellationAttempts;
-    @Column(name = "cancellation_next_attempt_at")
-    private Instant cancellationNextAttemptAt;
-    @Column(name = "cancellation_last_failure", length = 64)
-    private String cancellationLastFailure;
 
     @Column(name = "created_at")
+    @Getter
     private Instant createdAt;
 
     @Column(name = "updated_at")
+    @Getter
     private Instant updatedAt;
-
-    @Column(name = "recovery_attempts", nullable = false)
-    private int recoveryAttempts;
 
     @Column(name = "recovery_next_attempt_at")
     private Instant recoveryNextAttemptAt;
@@ -137,34 +142,22 @@ public class ReservationProcessEntity {
         reasonCode = process.reasonCode();
         writeId = mutation.toString();
         closedAt = process.closedAt();
-        abandonmentPending = process.abandonmentPending();
         var cancellation = process.cancellation();
-        cancellationKind = cancellation == null ? null : cancellation.kind().name();
-        cancellationStatus = cancellation == null ? null : cancellation.state().name();
-        cancellationRequestedAt = cancellation == null ? null : cancellation.requestedAt();
-        cancellationRetryVersion = cancellation == null ? 0 : cancellation.retryVersion();
-        cancellationAttempts = cancellation == null ? 0 : cancellation.attempts();
-        cancellationNextAttemptAt = cancellation == null ? null : cancellation.nextAttemptAt();
-        cancellationLastFailure = cancellation == null ? null : cancellation.lastFailure();
+        cancellationStatus = cancellation == null ? null : cancellation.name();
         updatedAt = now;
-    }
-
-    public String getId() {
-        return id;
     }
 
     /** Elegibilidad técnica, separada del presupuesto de efectos y del estado del agregado. */
     public boolean recoveryDue(Instant now, Duration initialDelay) {
-        if ("PENDING".equals(cancellationStatus) && cancellationAttempts < 3) return false;
-        if (closedAt != null && !"PENDING".equals(cancellationStatus)) return false;
-        var next = recoveryNextAttemptAt == null ? updatedAt.plus(initialDelay) : recoveryNextAttemptAt;
+        if (closedAt != null && cancellationStatus == null) return false;
+        var next = recoveryNextAttemptAt;
+        if (next == null) next = cancellationStatus != null ? updatedAt : updatedAt.plus(initialDelay);
         return !now.isBefore(next);
     }
 
     /** No cambia writeId, updatedAt ni contadores de teléfono/cancelación. */
-    public void scheduleRecovery(Instant now, int attempts, Duration retry, Duration cooldown) {
-        recoveryAttempts = recoveryAttempts >= attempts ? 1 : recoveryAttempts + 1;
-        recoveryNextAttemptAt = now.plus(recoveryAttempts >= attempts ? cooldown : retry);
+    public void scheduleRecovery(Instant nextAttempt) {
+        recoveryNextAttemptAt = nextAttempt;
     }
 
     /** Conserva una reserva posterior ya concedida a otro recorrido. */
@@ -173,95 +166,4 @@ public class ReservationProcessEntity {
             recoveryNextAttemptAt = nextAttempt;
     }
 
-    public long getOwnerId() {
-        return ownerId;
-    }
-
-    public long getProfessionalId() {
-        return professionalId;
-    }
-
-    public LocalDate getAppointmentDate() {
-        return appointmentDate;
-    }
-
-    public LocalTime getStartTime() {
-        return startTime;
-    }
-
-    public String getPatientFirstName() {
-        return patientFirstName;
-    }
-
-    public String getPatientLastName() {
-        return patientLastName;
-    }
-
-    public String getProfessionalFirstName() {
-        return professionalFirstName;
-    }
-
-    public String getProfessionalLastName() {
-        return professionalLastName;
-    }
-
-    public String getPhase() {
-        return phase;
-    }
-
-    public String getHoldId() {
-        return holdId;
-    }
-
-    public String getCentralProcessId() {
-        return centralProcessId;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public String getRequestEventId() {
-        return requestEventId;
-    }
-
-    public Long getReservationId() {
-        return reservationId;
-    }
-
-    public String getReasonCode() {
-        return reasonCode;
-    }
-
-    public Long getVersion() {
-        return version;
-    }
-
-    public String getWriteId() {
-        return writeId;
-    }
-
-    public Instant getClosedAt() {
-        return closedAt;
-    }
-
-    public boolean getAbandonmentPending() {
-        return abandonmentPending;
-    }
-
-    public String getCancellationKind() { return cancellationKind; }
-    public String getCancellationStatus() { return cancellationStatus; }
-    public Instant getCancellationRequestedAt() { return cancellationRequestedAt; }
-    public int getCancellationRetryVersion() { return cancellationRetryVersion; }
-    public int getCancellationAttempts() { return cancellationAttempts; }
-    public Instant getCancellationNextAttemptAt() { return cancellationNextAttemptAt; }
-    public String getCancellationLastFailure() { return cancellationLastFailure; }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
 }

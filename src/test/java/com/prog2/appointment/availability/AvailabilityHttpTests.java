@@ -236,21 +236,16 @@ class AvailabilityHttpTests {
     }
 
     @Test
-    void canRecoverARejectedTechnicalTokenWithoutReplayingTheFailedQuery() throws IOException, InterruptedException {
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void aRejectedTechnicalTokenRemainsUnavailableUntilRestartWithoutReplayingTheQuery() throws IOException, InterruptedException {
         int tokenCalls = PROVIDERS.tokenCalls.get();
         PROVIDERS.occupancyStatus.set(401);
         problem(get(QUERY, token), 503, "TECHNICAL_INTEGRATION_UNAVAILABLE");
         assertThat(PROVIDERS.occupancyCalls).hasValue(1);
-        assertThat(PROVIDERS.tokenCalls).hasValue(tokenCalls);
         PROVIDERS.occupancyStatus.set(200);
-        PROVIDERS.rotateCentralToken();
-        // La siguiente demanda dispara el ciclo de #4; no espera ni repite ocupaciones automáticamente.
         problem(get(QUERY, token), 503, "TECHNICAL_INTEGRATION_UNAVAILABLE");
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(access.getAccess()).isNotNull());
         assertThat(PROVIDERS.occupancyCalls).hasValue(1);
-        assertThat(PROVIDERS.tokenCalls).hasValue(tokenCalls + 1);
-        assertThat(get(QUERY, token).statusCode()).isEqualTo(200);
-        assertThat(PROVIDERS.occupancyCalls).hasValue(2);
+        assertThat(PROVIDERS.tokenCalls).hasValue(tokenCalls);
     }
 
     @Test

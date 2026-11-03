@@ -45,9 +45,8 @@
 
 - Crear el hold y confirmar inicialmente son dos operaciones centrales, aunque respondan a una sola acción del usuario.
 - Nombre y apellido se toman de la cuenta; `externalPatientId` y propiedad se obtienen del usuario autenticado.
-- El hold no se renueva por conservarlo localmente o salir de KMP. CU-05 completa el teléfono; CU-06 informa el estado; CU-10 permite abandonar explícitamente.
-- Se permite un único proceso pendiente por usuario. Para iniciar otro, el anterior debe alcanzar un resultado verificado: confirmación, cancelación, vencimiento o fallo terminal. Una confirmación de resultado incierto, la intención de abandono o el mero vencimiento de pantalla no liberan el límite. La creación sin IDs admite el cierre local del intento y una nueva creación condicionada por ocupaciones según la aclaración docente; no acredita cancelación central.
-- Si existe una solicitud de abandono aún sin resolver, conocer que la reserva se confirmó no libera el límite: primero se verifica el resultado de esa solicitud, conforme a CU-10.
+- El hold no se renueva por conservarlo localmente o salir de KMP. CU-05 completa el teléfono; CU-06 informa el estado; el proceso continúa hasta su resultado normal.
+- Se permite un único proceso pendiente por usuario. Para iniciar otro, el anterior debe alcanzar un resultado verificado: confirmación, cancelación, vencimiento o fallo terminal. Una confirmación de resultado incierto, el mero vencimiento de pantalla no liberan el límite. La creación sin IDs admite el cierre local del intento y una nueva creación condicionada por ocupaciones según la aclaración docente; no acredita cancelación central.
 - El límite no restringe la cantidad de reservas ya confirmadas ni las consultas de disponibilidad. Cada operación y resultado conserva su identidad de proceso; no reemplaza el historial de otro.
 
 ## Fuentes y pendientes

@@ -17,20 +17,20 @@ import com.prog2.appointment.infrastructure.config.TechnicalAccessProperties;
 import com.prog2.appointment.integration.TestIntegrationSupport;
 
 /** Firmas reales de prueba con claves efímeras; nunca carga material privado del usuario. */
-final class JwtTestTokens {
+public final class JwtTestTokens {
     static final KeyPair KEYS = TestIntegrationSupport.KEYS;
-    static final Instant NOW = Instant.parse("2026-10-26T12:00:00Z");
+    public static final Instant NOW = Instant.parse("2026-10-26T12:00:00Z");
 
     private JwtTestTokens() {
     }
 
-    static TechnicalAccessProperties access() {
+    public static TechnicalAccessProperties access() {
         return new TechnicalAccessProperties(URI.create("http://fictional-catalog.test"),
                 URI.create("http://fictional-central.test"), "fictional-group",
                 (RSAPrivateCrtKey) KEYS.getPrivate());
     }
 
-    static Map<String, Object> claims() {
+    public static Map<String, Object> claims() {
         var claims = new LinkedHashMap<String, Object>();
         claims.put("iss", "backend-turnos");
         claims.put("aud", List.of("catalog", "turnos"));
@@ -42,7 +42,7 @@ final class JwtTestTokens {
         return claims;
     }
 
-    static String signed(Map<String, Object> claims) throws JOSEException {
+    public static String signed(Map<String, Object> claims) throws JOSEException {
         return signed(claims, KEYS, JWSAlgorithm.RS256);
     }
 

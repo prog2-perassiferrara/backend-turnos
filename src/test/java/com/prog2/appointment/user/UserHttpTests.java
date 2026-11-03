@@ -534,6 +534,23 @@ class UserHttpTests {
     }
 
     @Test
+    void anUnrelatedReadCommitCannotConsumeTheRegistrationFailure() throws Exception {
+        faults.commit.set(UserFailureConfiguration.CommitFailure.AFTER);
+        try (var connection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("SELECT COUNT(*) FROM app_user");
+                    var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getLong(1)).isZero();
+            }
+            connection.commit();
+        }
+        assertProblem(register(profile("patient", "patient@example.test")),
+                503, "USER_REGISTRATION_UNAVAILABLE");
+        assertThat(count("app_user")).isEqualTo(1);
+    }
+
+    @Test
     void lostCommitResponseRetainsAccountAndRepeatDoesNotAuthenticateByExistence() throws IOException, InterruptedException {
         faults.commit.set(UserFailureConfiguration.CommitFailure.AFTER);
         assertProblem(
@@ -595,9 +612,10 @@ class UserHttpTests {
         }
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(ints = {200, 503, 401})
     @Timeout(45)
-    void recreatedContextRetainsAccountAndCanAuthenticate() throws IOException, InterruptedException, ParseException {
+    void recreatedContextRetainsAccountAndCanAuthenticate(int technicalStatus) throws IOException, InterruptedException, ParseException {
         assertThat(register(profile("patient", "patient@example.test")).statusCode())
                 .isEqualTo(201);
         Long id = jdbc.queryForObject("SELECT id FROM app_user", Long.class);
@@ -617,12 +635,19 @@ class UserHttpTests {
                 settings.entrySet().stream()
                         .map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
                         .toArray(String[]::new);
+        INTEGRATION.catalogStatus.set(technicalStatus);
         try (var restarted = application.run(arguments)) {
+            var access = restarted.getBean(TechnicalAccessUseCase.class);
+            if (technicalStatus == 200) assertThat(access.getAccess()).isNotNull();
+            else assertThatThrownBy(access::getAccess).isInstanceOf(
+                    com.prog2.appointment.integration.application.exception.TechnicalAccessUnavailableException.class);
             var token =
                     restarted
                             .getBean(AuthenticateUserUseCase.class)
                             .authenticate("PATIENT", PASSWORD, false);
             assertThat(SignedJWT.parse(token.value()).getJWTClaimsSet().getSubject()).isEqualTo(id.toString());
+        } finally {
+            INTEGRATION.catalogStatus.set(200);
         }
         assertThat(count("app_user")).isEqualTo(1);
     }

@@ -8,8 +8,8 @@ import com.prog2.appointment.integration.domain.model.TechnicalToken;
 public interface CentralIntegrationGateway {
     /**
      * @param token JWT central recibido del proveedor protegido
-     * @return parámetros de Turnos y estado de aprovisionamiento
-     * @throws IntegrationGatewayException ante rechazo, respuesta inválida o fallo de comunicación
+     * @return parámetros aprovisionados de Turnos
+     * @throws IntegrationGatewayException ante rechazo, configuración no aprovisionada, respuesta inválida o fallo de comunicación
      */
     IntegrationConfiguration fetchConfiguration(TechnicalToken token);
 }

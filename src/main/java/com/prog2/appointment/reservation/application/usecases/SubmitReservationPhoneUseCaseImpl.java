@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.application.usecases;
 
+import lombok.RequiredArgsConstructor;
 import com.prog2.appointment.reservation.application.exception.ReservationOperationException;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationPhoneException;
@@ -13,17 +14,11 @@ import java.time.Clock;
 import java.util.UUID;
 
 /** Acepta durabilidad local sin depender de Kafka ni de un JWT técnico vigente. */
+@RequiredArgsConstructor
 public final class SubmitReservationPhoneUseCaseImpl implements SubmitReservationPhoneUseCase {
     private final ReservationProcessRepository repository;
     private final String groupId;
     private final Clock clock;
-
-    public SubmitReservationPhoneUseCaseImpl(
-            ReservationProcessRepository repository, String groupId, Clock clock) {
-        this.repository = repository;
-        this.groupId = groupId;
-        this.clock = clock;
-    }
 
     @Override
     public Result submit(long ownerId, UUID processId, SubmitPhoneRequest request) {

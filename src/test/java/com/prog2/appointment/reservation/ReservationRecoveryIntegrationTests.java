@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation;
 
+import com.prog2.appointment.reservation.application.service.ReservationExecutionGuard;
+
 import static org.assertj.core.api.Assertions.*;
 
 import com.prog2.appointment.integration.TestIntegrationSupport;
@@ -67,6 +69,7 @@ class ReservationRecoveryIntegrationTests {
     private final PhoneSubmissionDispatcher phones;
     private final ThreadPoolTaskScheduler scheduler;
     private final CountingPublisher publisher;
+    private final AppointmentHoldGateway holds;
     private long owner;
 
     ReservationRecoveryIntegrationTests(@LocalServerPort int port, JsonMapper json, JdbcTemplate jdbc,
@@ -74,11 +77,11 @@ class ReservationRecoveryIntegrationTests {
             RecoverReservationProcessesUseCase recover, ReservationExecutionGuard guard,
             ReservationActionParser parser, CommitFaultDataSource faults, RecoveryClock clock,
             RecoverReservationCancellationsUseCase cancel, PhoneSubmissionDispatcher phones,
-            ThreadPoolTaskScheduler scheduler, CountingPublisher publisher) {
+            ThreadPoolTaskScheduler scheduler, CountingPublisher publisher, AppointmentHoldGateway holds) {
         this.port = port; this.json = json; this.jdbc = jdbc; this.repository = repository;
         this.store = store; this.recover = recover; this.guard = guard; this.parser = parser;
         this.faults = faults; this.clock = clock;
-        this.cancel = cancel; this.phones = phones; this.scheduler = scheduler; this.publisher = publisher;
+        this.cancel = cancel; this.phones = phones; this.scheduler = scheduler; this.publisher = publisher; this.holds = holds;
     }
 
     @DynamicPropertySource
@@ -95,7 +98,7 @@ class ReservationRecoveryIntegrationTests {
     @BeforeEach
     void setup() throws Exception {
         faults.clear(); clock.value.set(NOW); PROVIDERS.reset(); publisher.count.set(0);
-        jdbc.update("DELETE FROM reservation_inbox");
+        jdbc.update("DELETE FROM reservation_processed_event");
         jdbc.update("DELETE FROM reservation_phone_submission");
         jdbc.update("DELETE FROM reservation_process");
         String login = "recovery_" + UUID.randomUUID().toString().substring(0, 12);
@@ -136,12 +139,12 @@ class ReservationRecoveryIntegrationTests {
         });
     }
 
-    private ReservationDelivery request(ReservationProcess process) {
+    private ReservationAction request(ReservationProcess process) {
         String body = json.writeValueAsString(Map.of("schemaVersion", 1, "eventId", "request-" + process.id(),
                 "eventType", "AdditionalInformationRequested", "occurredAt", NOW.toString(),
                 "reservationProcessId", process.hold().centralProcessId(), "holdId", process.hold().holdId(),
                 "requiredField", "PHONE_NUMBER", "expiresAt", process.hold().expiresAt().toString()));
-        return parser.parse(new ReservationDelivery.Origin("fictional-actions", 0, 1, process.hold().centralProcessId()), body);
+        return parser.parse(process.hold().centralProcessId(), body).orElseThrow();
     }
 
     @Test
@@ -156,35 +159,84 @@ class ReservationRecoveryIntegrationTests {
                     .filteredOn(Optional::isPresent).hasSize(1);
         }
         assertThat(repository.beginInitialConfirmation(process.id(), NOW)).isEmpty();
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
     }
 
     @ParameterizedTest
     @EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
-    void ambiguousConfirmationCommitNeverTransfersAnotherExecutorsPermission(CommitFaultDataSource.Mode mode) {
+    void aConfirmationCommitErrorNeverGrantsPermissionEvenIfItPersisted(CommitFaultDataSource.Mode mode) {
         var process = save(candidate(true));
+        var processId = process.id();
         faults.arm(mode, "update reservation_process", 1);
-        var own = repository.beginInitialConfirmation(process.id(), NOW);
-        assertThat(own.isPresent()).isEqualTo(mode == CommitFaultDataSource.Mode.AFTER);
+        assertThatThrownBy(() -> repository.beginInitialConfirmation(processId, NOW))
+                .isInstanceOf(ReservationStorageException.class);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(
+                mode == CommitFaultDataSource.Mode.AFTER ? ReservationPhase.CONFIRMATION_PENDING : ReservationPhase.HELD);
+        faults.clear();
         assertThat(repository.beginInitialConfirmation(process.id(), NOW).isPresent())
                 .isEqualTo(mode == CommitFaultDataSource.Mode.BEFORE);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
+    void recoveryReadsThePersistedHoldCheckpointWithoutRepeatingCreation(CommitFaultDataSource.Mode mode) {
+        var process = save(candidate(false));
+        var hold = holds.create(process);
+        var processId = process.id();
+        assertThat(PROVIDERS.creates).hasValue(1);
+        faults.arm(mode, "update reservation_process", 1);
+        assertThatThrownBy(() -> repository.update(processId, value -> value.acceptHold(hold)))
+                .isInstanceOf(ReservationStorageException.class);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
+        var durable = repository.find(process.id()).orElseThrow();
+        assertThat(durable.hold()).isEqualTo(mode == CommitFaultDataSource.Mode.AFTER ? hold : null);
+        faults.clear(); clock.value.set(NOW.plusSeconds(31));
+        // Este caso verifica el checkpoint SQL con canal disponible; el broker se cubre en su suite.
+        var ready = org.mockito.Mockito.mock(ReservationMessagingReadiness.class);
+        var continuation = new com.prog2.appointment.reservation.application.usecases.StartReservationUseCaseImpl(
+                org.mockito.Mockito.mock(ReservationPatientGateway.class), org.mockito.Mockito.mock(ReservableSlotGateway.class),
+                holds, repository, ready, guard, clock, 3);
+        var restarted = new com.prog2.appointment.reservation.application.usecases.RecoverReservationProcessesUseCaseImpl(
+                repository, org.mockito.Mockito.mock(CentralAppointmentGateway.class), continuation, guard,
+                cancel, clock, new ReservationRecoveryPolicy(RETRY, COOLDOWN, COOLDOWN));
+        restarted.recoverDue();
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(
+                mode == CommitFaultDataSource.Mode.AFTER ? ReservationPhase.WAITING_FOR_REQUEST : ReservationPhase.FAILED);
+        assertThat(PROVIDERS.creates).hasValue(1);
+        assertThat(PROVIDERS.confirmations).hasValue(mode == CommitFaultDataSource.Mode.AFTER ? 1 : 0);
+    }
+
     @Test
-    void reviewBudgetSurvivesANewAdapterWithoutChangingBusinessWriteId() {
+    void anAmbiguousConfirmationCheckpointIsReconciledWithoutPostingAgain() {
+        var process = save(candidate(true));
+        var processId = process.id();
+        faults.arm(CommitFaultDataSource.Mode.AFTER, "update reservation_process", 1);
+        assertThatThrownBy(() -> repository.beginInitialConfirmation(processId, NOW))
+                .isInstanceOf(ReservationStorageException.class);
+        faults.clear(); clock.value.set(NOW.plusSeconds(31));
+        recover.recoverDue();
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
+        central(process, "CONFIRMED"); clock.value.set(NOW.plusSeconds(3632)); recover.recoverDue();
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMED);
+        assertThat(PROVIDERS.confirmations).hasValue(0);
+    }
+
+    @Test
+    void reviewDateSurvivesANewAdapterWithoutChangingBusinessWriteId() {
         var process = save(candidate(true).beginConfirmation());
         assertThat(repository.dueRecovery(NOW, COOLDOWN, 10)).isEmpty();
         var now = NOW.plusSeconds(30);
         for (int i = 0; i < 3; i++) {
-            assertThat(repository.beginRecovery(process.id(), now, 3, RETRY, COOLDOWN)).isPresent();
+            assertThat(repository.beginRecovery(process.id(), now, RETRY, COOLDOWN)).isPresent();
             now = now.plusSeconds(5);
         }
         var restarted = new JpaReservationProcessAdapter(store);
-        assertThat(restarted.dueRecovery(NOW.plusSeconds(69), COOLDOWN, 10)).isEmpty();
-        assertThat(restarted.beginRecovery(process.id(), NOW.plusSeconds(70), 3, RETRY, COOLDOWN)).isPresent();
+        assertThat(restarted.dueRecovery(NOW.plusSeconds(44), COOLDOWN, 10)).isEmpty();
+        assertThat(restarted.beginRecovery(process.id(), NOW.plusSeconds(45), RETRY, COOLDOWN)).isPresent();
         assertThat(repository.find(process.id()).orElseThrow().writeId()).isEqualTo(process.writeId());
-        assertThat(jdbc.queryForMap("SELECT recovery_attempts FROM reservation_process WHERE id=?", process.id().toString()))
-                .containsEntry("recovery_attempts", 1);
+        assertThat(restarted.dueRecovery(NOW.plusSeconds(49), COOLDOWN, 10)).doesNotContain(process.id());
+        assertThat(restarted.dueRecovery(NOW.plusSeconds(50), COOLDOWN, 10)).contains(process.id());
     }
 
     @Test
@@ -193,11 +245,11 @@ class ReservationRecoveryIntegrationTests {
         UUID id = process.id();
         faults.arm(CommitFaultDataSource.Mode.AFTER, "update reservation_process", 1);
         var observed = NOW.plusSeconds(30);
-        assertThatThrownBy(() -> repository.beginRecovery(id, observed, 3, RETRY, COOLDOWN))
+        assertThatThrownBy(() -> repository.beginRecovery(id, observed, RETRY, COOLDOWN))
                 .isInstanceOf(ReservationStorageException.class);
         faults.clear();
-        assertThat(repository.beginRecovery(id, NOW.plusSeconds(30), 3, RETRY, COOLDOWN)).isEmpty();
-        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
+        assertThat(repository.beginRecovery(id, NOW.plusSeconds(30), RETRY, COOLDOWN)).isEmpty();
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
     }
 
     @Test
@@ -230,7 +282,7 @@ class ReservationRecoveryIntegrationTests {
     void anEmptyListingAfterExpiryKeepsAnAttemptedConfirmationPending() {
         var process = save(candidate(true).beginConfirmation()); clock.value.set(NOW.plusSeconds(301));
         recover.recoverDue();
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
         assertThat(repository.findPending(owner)).isPresent();
         assertThat(PROVIDERS.confirmations).hasValue(0);
     }
@@ -240,10 +292,10 @@ class ReservationRecoveryIntegrationTests {
         var process = save(candidate(false)); clock.value.set(NOW.plusSeconds(31));
         try (var _ = guard.tryAcquire(process.id()).orElseThrow()) {
             recover.recoverDue();
-            assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CREATING_HOLD);
+            assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.HOLD_PENDING);
         }
         clock.value.set(NOW.plusSeconds(3632)); recover.recoverDue();
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.FAILED);
         assertThat(repository.findPending(owner)).isEmpty();
         assertThat(PROVIDERS.creates).hasValue(0);
     }
@@ -258,91 +310,87 @@ class ReservationRecoveryIntegrationTests {
     }
 
     @Test
-    void aDeferredRequestIsAppliedOnceWhenItsAssociationBecomesKnown() {
+    void anUnknownProcessIsIgnoredDurablyWithoutFutureAssociationReplay() {
         var process = candidate(true).beginConfirmation();
-        var delivery = request(process); repository.accept(delivery);
-        assertThat(jdbc.queryForObject("SELECT outcome FROM reservation_inbox", String.class)).isEqualTo("DEFERRED");
-        save(process); repository.replayDeferredKnown(10);
-        var current = repository.find(process.id()).orElseThrow();
-        assertThat(current.phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
-        assertThat(current.requestEventId()).isEqualTo(delivery.action().correlation().eventId());
-        long version = current.version();
-        repository.replayDeferredKnown(10); repository.accept(delivery);
-        assertThat(repository.find(process.id()).orElseThrow().version()).isEqualTo(version);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_inbox", Integer.class)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT outcome FROM reservation_inbox", String.class)).isEqualTo("APPLIED");
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
-    void replayCommitFailureKeepsOneReceiptAndCanBeRecovered(CommitFaultDataSource.Mode mode) {
-        var process = candidate(true).beginConfirmation(); repository.accept(request(process)); save(process);
-        faults.arm(mode, "update reservation_inbox", 1);
-        assertThatThrownBy(() -> repository.replayDeferredKnown(10)).isInstanceOf(ReservationStorageException.class);
-        faults.clear(); repository.replayDeferredKnown(10);
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_inbox", Integer.class)).isEqualTo(1);
+        var action = request(process);
+        repository.accept(action);
+        assertThat(repository.find(process.id())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT event_id FROM reservation_processed_event", String.class))
+                .isEqualTo(action.correlation().eventId());
+        save(process);
+        repository.accept(action);
+        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
     }
 
     @Test
-    void anOldDeferredRequestCannotReopenAConfirmedProcess() {
-        var process = candidate(true).beginConfirmation(); repository.accept(request(process));
-        process = process.reconcile(new CentralAppointment(process.hold().centralProcessId(),
+    void aLateRequestForAnExistingFinalProcessIsDeduplicatedWithoutReopeningIt() {
+        var process = candidate(true).beginConfirmation();
+        process = save(process.reconcile(new CentralAppointment(process.hold().centralProcessId(),
                 process.patient().externalPatientId(), process.selection(), 8251,
-                CentralAppointmentState.CONFIRMED, null), NOW);
-        save(process); repository.replayDeferredKnown(10);
+                CentralAppointmentState.CONFIRMED, null), NOW));
+        var action = request(process);
+        long version = jdbc.queryForObject("SELECT version FROM reservation_process WHERE id=?", Long.class, process.id().toString());
+        repository.accept(action);
+        repository.accept(action);
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMED);
-        assertThat(jdbc.queryForObject("SELECT outcome FROM reservation_inbox", String.class)).isEqualTo("IGNORED");
+        assertThat(jdbc.queryForObject("SELECT version FROM reservation_process WHERE id=?", Long.class, process.id().toString())).isEqualTo(version);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event", Integer.class)).isEqualTo(1);
     }
 
     @Test
-    void twoReplaysDoNotApplyTheSameReceiptTwice() throws Exception {
-        var process = candidate(true).beginConfirmation(); repository.accept(request(process)); save(process);
+    void concurrentDeliveryOfTheSameEventChangesTheProcessOnlyOnce() throws Exception {
+        var process = save(candidate(true).beginConfirmation());
+        var action = request(process);
         var release = new CountDownLatch(1);
         try (var workers = Executors.newFixedThreadPool(2)) {
-            var a = workers.submit(() -> { release.await(); repository.replayDeferredKnown(10); return true; });
-            var b = workers.submit(() -> { release.await(); repository.replayDeferredKnown(10); return true; });
-            release.countDown(); a.get(10, TimeUnit.SECONDS); b.get(10, TimeUnit.SECONDS);
+            var a = workers.submit(() -> { release.await(); repository.accept(action); return true; });
+            var b = workers.submit(() -> { release.await(); repository.accept(action); return true; });
+            release.countDown();
+            assertThat(a.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(b.get(10, TimeUnit.SECONDS)).isTrue();
         }
-        assertThat(repository.find(process.id()).orElseThrow().version()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_inbox", Integer.class)).isEqualTo(1);
+        var current = repository.find(process.id()).orElseThrow();
+        assertThat(current.phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
+        assertThat(jdbc.queryForObject("SELECT version FROM reservation_process WHERE id=?", Long.class, process.id().toString())).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event", Integer.class)).isEqualTo(1);
     }
 
     @Test
-    void aDeferredReceiptCannotBindToADifferentHold() {
-        var original = candidate(true); repository.accept(request(original));
-        var different = ReservationProcess.begin(new StartReservationRequest(original.id(), original.selection()), original.patient())
-                .acceptHold(new HoldDetails("different-hold", original.hold().centralProcessId(), original.hold().expiresAt()))
-                .beginConfirmation();
-        save(different); repository.replayDeferredKnown(10);
-        assertThat(repository.find(different.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
-        assertThat(jdbc.queryForMap("SELECT outcome,rejection FROM reservation_inbox"))
-                .containsEntry("outcome", "REJECTED").containsEntry("rejection", "HOLD_MISMATCH");
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"group", "fingerprint"})
-    void replayRevalidatesStoredContentInsteadOfTrustingItsOldClassification(String change) {
-        var process = candidate(true).beginConfirmation(); repository.accept(request(process)); save(process);
-        if ("group".equals(change))
-            jdbc.update("UPDATE reservation_inbox SET payload=JSON_SET(payload,'$.groupId','another-group')");
-        else jdbc.update("UPDATE reservation_inbox SET fingerprint=?", "0".repeat(64));
-        repository.replayDeferredKnown(10);
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
-        assertThat(jdbc.queryForMap("SELECT outcome,rejection FROM reservation_inbox"))
-                .containsEntry("outcome", "REJECTED").containsEntry("rejection", "INVALID_STORED_ACTION");
+    void reusingAnEventIdForDifferentContentKeepsTheFirstEffect() {
+        var process = save(candidate(true).beginConfirmation());
+        var action = request(process);
+        repository.accept(action);
+        var changed = new ReservationAction(ReservationActionType.INVALID, action.correlation(), null, null, null);
+        var current = repository.find(process.id()).orElseThrow();
+        repository.accept(changed);
+        assertThat(repository.find(process.id()).orElseThrow()).isEqualTo(current);
     }
 
     @Test
-    void aFutureActionTypeNeverBecomesASupportedRequestDuringReplay() {
-        var process = candidate(true).beginConfirmation();
-        var original = request(process);
-        repository.accept(parser.parse(original.origin(),
-                original.payload().replace("AdditionalInformationRequested", "FutureAction")));
-        save(process); repository.replayDeferredKnown(10);
-        assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.CONFIRMING);
-        assertThat(jdbc.queryForMap("SELECT outcome,rejection FROM reservation_inbox"))
-                .containsEntry("outcome", "DEFERRED").containsEntry("rejection", "UNHANDLED_ACTION");
+    void aMismatchedHoldOrAnUnsupportedTypeCannotChangeAnExistingProcess() {
+        var process = save(candidate(true).beginConfirmation());
+        var wrongHold = new ReservationAction(ReservationActionType.PHONE_REQUESTED,
+                new ReservationAction.Correlation("wrong-hold", process.hold().centralProcessId(), "another-hold", null),
+                process.hold().expiresAt(), null, null);
+        repository.accept(wrongHold);
+        repository.accept(new ReservationAction(ReservationActionType.OTHER,
+                request(process).correlation(), null, null, null));
+        assertThat(repository.find(process.id()).orElseThrow()).isEqualTo(process);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void aCommitResponseLostAfterSqlDoesNotReturnSuccessAndRedeliveryDoesNotRepeatEffects() {
+        var process = save(candidate(true).beginConfirmation());
+        var action = request(process);
+        faults.arm(CommitFaultDataSource.Mode.AFTER, "insert into reservation_processed_event", 1);
+        assertThatThrownBy(() -> repository.accept(action)).isInstanceOf(ReservationStorageException.class);
+        faults.clear();
+        var committed = repository.find(process.id()).orElseThrow();
+        assertThat(committed.phase()).isEqualTo(ReservationPhase.WAITING_FOR_PHONE);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM reservation_processed_event", Integer.class)).isEqualTo(1);
+        repository.accept(action);
+        assertThat(repository.find(process.id()).orElseThrow()).isEqualTo(committed);
     }
 
     @Test
@@ -351,7 +399,7 @@ class ReservationRecoveryIntegrationTests {
         UUID phoneId = UUID.randomUUID();
         repository.submitPhone(owner, process.id(), new SubmitPhoneRequest(phoneId, "1234567"),
                 ReservationTestSupport.GROUP, NOW);
-        repository.beginRecovery(process.id(), NOW.plusSeconds(30), 3, RETRY, COOLDOWN);
+        repository.beginRecovery(process.id(), NOW.plusSeconds(30), RETRY, COOLDOWN);
         repository.beginPhonePublication(phoneId, NOW.plusSeconds(31), 3, RETRY, COOLDOWN);
         repository.phonePublished(phoneId, NOW.plusSeconds(33));
         clock.value.set(NOW.plusSeconds(35)); recover.recoverDue();
@@ -368,56 +416,55 @@ class ReservationRecoveryIntegrationTests {
         var process = candidate(true).beginConfirmation();
         process = save(process.reconcile(new CentralAppointment(process.hold().centralProcessId(),
                 process.patient().externalPatientId(), process.selection(), 8251, CentralAppointmentState.CONFIRMED, null), NOW));
-        UUID id = process.id(); repository.requestCancellation(owner, id, CancellationKind.CANCEL, null, NOW);
-        for (int i = 0; i < 3; i++) repository.beginCancellationAttempt(id, NOW.plusSeconds(i), Duration.ofSeconds(1));
+        UUID id = process.id(); repository.requestCancellation(owner, id, NOW);
+        var claim = repository.beginCancellationAttempt(id, NOW, Duration.ofSeconds(1)).orElseThrow();
+        repository.finishCancellationAttempt(id, claim.writeId(), true, "CANCELLATION_UNCERTAIN", NOW, NOW.plusSeconds(5));
         central(process, "CONFIRMED"); clock.value.set(NOW.plusSeconds(40)); recover.recoverDue();
         var current = repository.find(id).orElseThrow();
-        assertThat(current.cancellation().attempts()).isEqualTo(3);
-        assertThat(current.cancellation().retryVersion()).isZero();
-        assertThat(current.cancellation().state()).isEqualTo(CancellationState.PENDING);
+        assertThat(current.cancellation()).isEqualTo(CancellationState.RETRY_REQUIRED);
         assertThat(PROVIDERS.cancellations).hasValue(0);
     }
 
-    @Test
-    void slowReadsAndCancellationDoNotBlockPhonePublication() throws Exception {
-        var read = candidate(true).beginConfirmation();
-        read = save(read.reconcile(new CentralAppointment(read.hold().centralProcessId(),
-                read.patient().externalPatientId(), read.selection(), 8251, CentralAppointmentState.CONFIRMED, null), NOW));
-        repository.requestCancellation(owner, read.id(), CancellationKind.CANCEL, null, NOW);
-        for (int i = 0; i < 3; i++) repository.beginCancellationAttempt(read.id(), NOW.plusSeconds(i), Duration.ofSeconds(1));
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void aSlowReviewOrCancellationDoesNotBlockPhonePublication(boolean readOnly) throws Exception {
+        var process = candidate(true).beginConfirmation();
+        process = save(process.reconcile(new CentralAppointment(process.hold().centralProcessId(),
+                process.patient().externalPatientId(), process.selection(), 8251, CentralAppointmentState.CONFIRMED, null), NOW));
+        repository.requestCancellation(owner, process.id(), NOW);
+        if (readOnly) {
+            var claim = repository.beginCancellationAttempt(process.id(), NOW, Duration.ofSeconds(1)).orElseThrow();
+            repository.finishCancellationAttempt(process.id(), claim.writeId(), true, "CANCELLATION_UNCERTAIN", NOW, NOW.plusSeconds(5));
+        }
+        central(process, "CONFIRMED");
         clock.value.set(NOW.plusSeconds(40));
-        var cancelled = candidate(true).beginConfirmation();
-        cancelled = save(cancelled.reconcile(new CentralAppointment(cancelled.hold().centralProcessId(),
-                cancelled.patient().externalPatientId(), cancelled.selection(), 8252, CentralAppointmentState.CONFIRMED, null), NOW));
-        repository.requestCancellation(owner, cancelled.id(), CancellationKind.CANCEL, null, clock.instant());
         var waiting = save(candidate(true).beginConfirmation()); repository.accept(request(waiting));
         UUID phone = UUID.randomUUID();
         repository.submitPhone(owner, waiting.id(), new SubmitPhoneRequest(phone, "1234567"),
                 ReservationTestSupport.GROUP, clock.instant());
-        var reading = new CountDownLatch(1); var cancelling = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
         PROVIDERS.appointmentsOverride.set(exchange -> {
-            reading.countDown(); awaitGate(release);
+            entered.countDown(); awaitGate(release);
             exchange.getResponseHeaders().set("X-Total-Count", "0");
             TestIntegrationSupport.respond(exchange, 200, "[]");
         });
-        var cancelledId = cancelled.id();
+        var centralId = process.hold().centralProcessId();
         PROVIDERS.cancellationOverride.set(exchange -> {
-            cancelling.countDown(); awaitGate(release);
+            entered.countDown(); awaitGate(release);
             TestIntegrationSupport.respond(exchange, 200, json.writeValueAsString(Map.of(
-                    "reservationProcessId", "central-" + cancelledId, "reservationId", 8252,
+                    "reservationProcessId", centralId, "reservationId", 8251,
                     "status", "CANCELLED", "cancelledAt", clock.instant().toString())));
         });
-        assertThat(scheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(3);
-        var readTask = scheduler.schedule(recover::recoverDue, Instant.now());
-        var cancelTask = scheduler.schedule(() -> cancel.recover(cancelledId), Instant.now());
+        assertThat(scheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(2);
+        var recovery = scheduler.schedule(recover::recoverDue, Instant.now());
         try {
-            assertThat(reading.await(3, TimeUnit.SECONDS)).isTrue();
-            assertThat(cancelling.await(3, TimeUnit.SECONDS)).isTrue();
+            assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
             scheduler.schedule(phones::dispatch, Instant.now()).get(3, TimeUnit.SECONDS);
             assertThat(publisher.count).hasValue(1);
             assertThat(repository.findPhone(phone).orElseThrow().publishedAt()).isNotNull();
         } finally {
-            release.countDown(); readTask.get(5, TimeUnit.SECONDS); cancelTask.get(5, TimeUnit.SECONDS);
+            release.countDown(); recovery.get(5, TimeUnit.SECONDS);
         }
     }
 
@@ -430,7 +477,7 @@ class ReservationRecoveryIntegrationTests {
     }
 
     @Test
-    void v7PreservesAV6DatabaseAndSchedulesItsExistingProcess() throws Exception {
+    void v7AndV11PreserveProcessesOutboxAndEveryHistoricalEventId() throws Exception {
         var process = save(candidate(true).beginConfirmation());
         repository.accept(request(process));
         UUID phoneId = UUID.randomUUID();
@@ -451,21 +498,85 @@ class ReservationRecoveryIntegrationTests {
                 + "closed_at,abandonment_pending,created_at,updated_at,professional_first_name,professional_last_name,"
                 + "cancellation_kind,cancellation_status,cancellation_requested_at,cancellation_retry_version,"
                 + "cancellation_attempts,cancellation_next_attempt_at,cancellation_last_failure";
-        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns
+        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns.replace("abandonment_pending", "FALSE").replace("cancellation_kind", "IF(cancellation_status IS NULL,NULL,'CANCEL')").replace("cancellation_requested_at", "IF(cancellation_status IS NULL,NULL,updated_at)").replace("cancellation_retry_version", "0").replace("cancellation_attempts", "0").replace("cancellation_next_attempt_at", "IF(cancellation_status IS NULL,NULL,updated_at)").replace("cancellation_last_failure", "NULL")
                 + " FROM reservation_recovery.reservation_process WHERE id=?", process.id().toString());
-        old.update("INSERT INTO reservation_inbox SELECT * FROM reservation_recovery.reservation_inbox");
+        old.update("INSERT INTO reservation_inbox (topic,partition_number,record_offset,event_id,fingerprint,payload,outcome,received_at) "
+                + "SELECT 'migration',0,0,event_id,REPEAT('0',64),'{}','APPLIED',CURRENT_TIMESTAMP(6) "
+                + "FROM reservation_recovery.reservation_processed_event");
+        for (String outcome : List.of("IGNORED", "REJECTED", "DEFERRED")) {
+            old.update("INSERT INTO reservation_inbox (topic,partition_number,record_offset,event_id,fingerprint,payload,outcome,received_at) "
+                    + "VALUES(?,0,0,?,REPEAT('0',64),'{}',?,CURRENT_TIMESTAMP(6))", outcome, outcome, outcome);
+        }
+        old.update("INSERT INTO reservation_inbox (topic,partition_number,record_offset,event_id,fingerprint,payload,outcome,received_at) "
+                + "VALUES('invalid',0,0,NULL,REPEAT('0',64),'{}','REJECTED',CURRENT_TIMESTAMP(6))");
         final String phoneColumns = "id,sequence_id,process_id,group_id,central_process_id,hold_id,request_event_id,"
                 + "phone_number,occurred_at,expires_at,published_at,closed_at,cycle_attempt,next_attempt_at,last_failure,version";
         old.update("INSERT INTO reservation_phone_submission (" + phoneColumns + ") SELECT " + phoneColumns
                 + " FROM reservation_recovery.reservation_phone_submission");
         Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
-        assertThat(old.queryForMap("SELECT phase,recovery_attempts,recovery_next_attempt_at FROM reservation_process"))
-                .containsEntry("phase", "PHONE_QUEUED").containsEntry("recovery_attempts", 0)
+        assertThat(old.queryForMap("SELECT phase,recovery_next_attempt_at FROM reservation_process"))
+                .containsEntry("phase", "PHONE_QUEUED")
                 .containsEntry("recovery_next_attempt_at", null);
         assertThat(old.queryForObject("SELECT COUNT(*) FROM user_identifier", Integer.class))
                 .isEqualTo(jdbc.queryForObject("SELECT COUNT(*) FROM user_identifier", Integer.class));
         assertThat(old.queryForObject("SELECT id FROM reservation_phone_submission", String.class)).isEqualTo(phoneId.toString());
-        assertThat(old.queryForObject("SELECT COUNT(*) FROM reservation_inbox", Integer.class)).isEqualTo(1);
+        assertThat(old.queryForList("SELECT event_id FROM reservation_processed_event", String.class))
+                .containsExactlyInAnyOrder(request(process).correlation().eventId(), "IGNORED", "REJECTED", "DEFERRED");
+        assertThat(old.queryForObject("SELECT COUNT(*) FROM information_schema.tables "
+                + "WHERE table_schema='recovery_previous' AND table_name='reservation_inbox'", Integer.class)).isZero();
+        assertThat(old.queryForObject("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema='recovery_previous' AND table_name='reservation_processed_event'", Integer.class)).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = ReservationPhase.class,
+            names = {"CONFIRMATION_PENDING", "CONFIRMED"})
+    void v10RetiresOldAbandonIntentWithoutChangingEvidenceOrNormalCancellation(ReservationPhase phase) throws Exception {
+        var initial = candidate(true).beginConfirmation();
+        var pending = save(phase == ReservationPhase.CONFIRMED
+                ? initial.reconcile(new CentralAppointment(initial.hold().centralProcessId(),
+                        initial.patient().externalPatientId(), initial.selection(), 8251,
+                        CentralAppointmentState.CONFIRMED, null), NOW) : initial);
+        var base = candidate(true).beginConfirmation();
+        var confirmed = save(base.reconcile(new CentralAppointment(base.hold().centralProcessId(),
+                base.patient().externalPatientId(), base.selection(), 8251,
+                CentralAppointmentState.CONFIRMED, null), NOW).requestCancellation());
+        try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
+                var statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS stage1_previous");
+            statement.execute("CREATE DATABASE stage1_previous");
+        }
+        String url = MYSQL.getJdbcUrl().replace("/reservation_recovery", "/stage1_previous");
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).target("9").load().migrate();
+        var old = new JdbcTemplate(new DriverManagerDataSource(url, "root", MYSQL.getPassword()));
+        old.update("INSERT INTO app_user SELECT * FROM reservation_recovery.app_user");
+        String columns = "id,owner_id,professional_id,appointment_date,start_time,patient_first_name,patient_last_name,"
+                + "phase,hold_id,central_process_id,expires_at,request_event_id,reservation_id,reason_code,version,write_id,"
+                + "closed_at,created_at,updated_at,professional_first_name,professional_last_name,cancellation_status,"
+                + "cancellation_requested_at,cancellation_retry_version,cancellation_attempts,cancellation_next_attempt_at,"
+                + "cancellation_last_failure,recovery_next_attempt_at";
+        old.update("INSERT INTO reservation_process (" + columns + ") SELECT " + columns.replace("cancellation_requested_at", "IF(cancellation_status IS NULL,NULL,updated_at)").replace("cancellation_retry_version", "0").replace("cancellation_attempts", "0").replace("cancellation_next_attempt_at", "IF(cancellation_status IS NULL,NULL,updated_at)").replace("cancellation_last_failure", "NULL")
+                + " FROM reservation_recovery.reservation_process WHERE id IN (?,?)",
+                pending.id().toString(), confirmed.id().toString());
+        old.update("UPDATE reservation_process SET abandonment_pending=TRUE, cancellation_kind='ABANDON',"
+                + " cancellation_status='PENDING', cancellation_requested_at=?, cancellation_next_attempt_at=? WHERE id=?",
+                java.time.LocalDateTime.ofInstant(NOW, java.time.ZoneOffset.UTC),
+                java.time.LocalDateTime.ofInstant(NOW, java.time.ZoneOffset.UTC), pending.id().toString());
+        old.update("UPDATE reservation_process SET cancellation_kind='CANCEL' WHERE id=?", confirmed.id().toString());
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
+        var row = old.queryForMap("SELECT * FROM reservation_process WHERE id=?", pending.id().toString());
+        assertThat(row).containsEntry("phase", phase.name())
+                .containsEntry("hold_id", pending.hold().holdId())
+                .containsEntry("central_process_id", pending.hold().centralProcessId())
+                .containsEntry("cancellation_status", null)
+                .containsEntry("active_owner_id", phase == ReservationPhase.CONFIRMED ? null : owner)
+                .doesNotContainKeys("abandonment_pending", "cancellation_kind");
+        java.time.LocalDateTime expiry = old.queryForObject("SELECT expires_at FROM reservation_process WHERE id=?",
+                (result, rowNumber) -> result.getObject(1, java.time.LocalDateTime.class), pending.id().toString());
+        assertThat(expiry).isEqualTo(java.time.LocalDateTime.ofInstant(pending.hold().expiresAt(), java.time.ZoneOffset.UTC));
+        assertThat(old.queryForMap("SELECT phase,cancellation_status FROM reservation_process WHERE id=?",
+                confirmed.id().toString())).containsEntry("phase", "CONFIRMED")
+                .containsEntry("cancellation_status", "PENDING");
     }
 
     static final class RecoveryClock extends Clock {
@@ -494,4 +605,41 @@ class ReservationRecoveryIntegrationTests {
                     MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()));
         }
     }
+    @Test
+    void migrationConsolidatesDurablePhasesWithoutLosingIdsOrDeadlines() throws Exception {
+        try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
+                var statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS recovery_phases");
+            statement.execute("CREATE DATABASE recovery_phases");
+        }
+        String url = MYSQL.getJdbcUrl().replace("/reservation_recovery", "/recovery_phases");
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).target("7").load().migrate();
+        var old = new JdbcTemplate(new DriverManagerDataSource(url, "root", MYSQL.getPassword()));
+        String[][] phases = {{"CREATING_HOLD", "HOLD_PENDING"}, {"HOLD_UNCERTAIN", "HOLD_PENDING"},
+                {"CONFIRMING", "CONFIRMATION_PENDING"}, {"CONFIRMATION_UNCERTAIN", "CONFIRMATION_PENDING"},
+                {"REJECTED", "FAILED"}, {"HOLD_ATTEMPT_ABANDONED", "FAILED"}};
+        for (int i = 0; i < phases.length; i++) {
+            long user = i + 1L;
+            old.update("INSERT INTO app_user (id,login,email,first_name,last_name,lang_key,password_hash,activated,created_at,last_modified_at)"
+                    + " VALUES (?,?,?,'Test','Patient','es','fictional',true,?,?)", user, "migration" + i,
+                    "migration" + i + "@example.test", java.sql.Timestamp.from(NOW), java.sql.Timestamp.from(NOW));
+            boolean known = i == 2 || i == 3;
+            old.update("INSERT INTO reservation_process (id,owner_id,professional_id,appointment_date,start_time,patient_first_name,"
+                    + "patient_last_name,phase,hold_id,central_process_id,expires_at,reason_code,write_id,closed_at,created_at,updated_at,version)"
+                    + " VALUES (?,?,15,'2026-11-04','10:00','Test','Patient',?,?,?,?,?,?,?,?,?,0)", "migration-" + i, user,
+                    phases[i][0], known ? "hold-" + i : null, known ? "central-" + i : null,
+                    known ? java.sql.Timestamp.from(NOW.plusSeconds(300)) : null, "PRESERVED_REASON", UUID.randomUUID().toString(),
+                    i >= 4 ? java.sql.Timestamp.from(NOW) : null, java.sql.Timestamp.from(NOW), java.sql.Timestamp.from(NOW));
+        }
+        var before = old.queryForList("SELECT id,owner_id,hold_id,central_process_id,expires_at,reason_code,write_id,closed_at FROM reservation_process ORDER BY id");
+        Flyway.configure().dataSource(url, "root", MYSQL.getPassword()).load().migrate();
+        assertThat(old.queryForList("SELECT id,owner_id,hold_id,central_process_id,expires_at,reason_code,write_id,closed_at FROM reservation_process ORDER BY id"))
+                .isEqualTo(before);
+        for (int i = 0; i < phases.length; i++)
+            assertThat(old.queryForObject("SELECT phase FROM reservation_process WHERE id=?", String.class, "migration-" + i))
+                    .isEqualTo(phases[i][1]);
+        assertThat(old.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='recovery_phases' AND column_name='recovery_attempts'", Integer.class))
+                .isZero();
+    }
+
 }

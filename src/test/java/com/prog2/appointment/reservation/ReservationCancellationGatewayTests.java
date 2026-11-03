@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 import com.prog2.appointment.integration.TestIntegrationSupport;
-import com.prog2.appointment.integration.domain.enums.ProvisioningStatus;
 import com.prog2.appointment.integration.domain.model.*;
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import com.prog2.appointment.reservation.domain.enums.*;
@@ -35,8 +34,7 @@ class ReservationCancellationGatewayTests {
         providers = new ReservationTestSupport(() -> "fictional:9092");
         access = mock(TechnicalAccessUseCase.class);
         when(access.getAccess()).thenReturn(new TechnicalAccess(new TechnicalToken(providers.token, null),
-                new IntegrationConfiguration(ReservationTestSupport.GROUP, ProvisioningStatus.PROVISIONED,
-                        "fictional:9092", "fictional-consumer", "fictional-actions", "fictional-phone")));
+                new IntegrationConfiguration(ReservationTestSupport.GROUP, "fictional:9092", "fictional-consumer", "fictional-actions", "fictional-phone")));
         process = ReservationProcessTests.confirming().apply(
                 ReservationProcessTests.action(ReservationActionType.CONFIRMED, "confirmed"), ReservationProcessTests.NOW);
     }

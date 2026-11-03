@@ -18,7 +18,7 @@
 
 ## Flujo principal
 
-1. La persona envía `login`, `password`, `firstName`, `lastName`, `email`, `langKey` y, opcionalmente, `imageUrl` desde KMP.
+1. La persona envía `login`, `password`, `firstName`, `lastName`, `email` y, opcionalmente, `langKey` e `imageUrl` desde KMP.
 2. Turnos valida los datos y comprueba las restricciones de unicidad que correspondan al contrato de usuario exigido.
 3. Turnos crea la cuenta, protege la contraseña mediante hashing y administra identificadores, activación, autoridades y auditoría.
 4. El flujo de registro ejecuta [CU-02](CU-02-autenticar-usuario.md) con las credenciales recién registradas, sin pedir otra acción a la persona.
@@ -47,4 +47,4 @@
 
 **Fuente:** [enunciado, sección 3.2](../../../PROJECT_STATEMENT-v1.md); [decisiones registradas](README.md).
 
-**Pendiente para la SPEC:** precisar las validaciones de usuario final exigidas por cátedra. No trasladar sin comprobación las restricciones del registro de cuenta técnica del anexo.
+**Contrato vigente:** [registro y autenticación](../CONTRATOS.md#api-propia-de-turnos), incluida la validación de usuario final. La cuenta técnica es independiente.

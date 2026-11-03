@@ -1,5 +1,6 @@
 package com.prog2.appointment.availability.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import java.time.DateTimeException;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -15,14 +16,10 @@ import com.prog2.appointment.availability.infrastructure.client.dto.Professional
 import com.prog2.appointment.infrastructure.security.jwt.ServiceTokenIssuer;
 
 /** Adapter de Catálogo: exige la lectura conjunta vigente sin reproducir su política de sincronización. */
+@RequiredArgsConstructor
 public final class WebClientProfessionalAgendaAdapter implements ProfessionalAgendaGateway {
     private final AvailabilityHttpClient client;
     private final ServiceTokenIssuer issuer;
-
-    public WebClientProfessionalAgendaAdapter(AvailabilityHttpClient client, ServiceTokenIssuer issuer) {
-        this.client = client;
-        this.issuer = issuer;
-    }
 
     @Override
     public Optional<ProfessionalAgenda> find(long professionalId) {

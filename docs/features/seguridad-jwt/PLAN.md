@@ -1,33 +1,11 @@
 # PLAN: Protección JWT de las APIs de Turnos
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **SPEC de referencia:** [SPEC.md](SPEC.md), aprobada explícitamente el 2026-10-26.
 **Versión de la spec revisada:** revisión 2026-10-26, 8 RF y 8 CA; código base `ff099f9`.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** explícita del usuario el 2026-10-26 («apruebo plan»). Habilita derivar TASKS; no autoriza implementar.
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
-Este documento define la solución técnica. Una vez revisado, el agente puede
-derivar TASKS.md con tareas, dependencias y comprobaciones.
--->
-
-<!-- PARA EL AGENTE
-- Lee la SPEC.md aprobada, las instrucciones del proyecto y los contratos pertinentes.
-  Si falta un documento necesario o la spec no está aprobada, indícalo antes de avanzar.
-- Inspecciona el repositorio. Referencia rutas verificadas y distingue las nuevas propuestas.
-- Propón una solución proporcional al alcance y coherente con el proyecto.
-  Reutiliza lo existente y justifica nuevas dependencias o cambios de arquitectura.
-- Distingue hechos, decisiones confirmadas y propuestas. Consulta las decisiones
-  no resueltas; haz pocas preguntas por vez y actualiza el plan con las respuestas.
-- Referencia los requisitos y criterios por su ID, sin copiar toda la spec.
-- Si una decisión cambia el comportamiento o alcance, vuelve a la spec y solicita
-  confirmación. No resuelvas una duda de producto mediante una suposición técnica.
-- Conserva estos comentarios. No implementes durante la planificación.
-- Solicita aprobación antes de marcar el plan como Aprobado. La autorización
-  para implementar debe ser explícita; no se deduce del estado de los documentos.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Contexto técnico verificado
 

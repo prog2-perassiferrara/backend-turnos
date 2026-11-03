@@ -1,5 +1,6 @@
 package com.prog2.appointment.integration.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import java.text.ParseException;
 import com.nimbusds.jwt.JWTParser;
 import com.prog2.appointment.infrastructure.security.jwt.ServiceTokenIssuer;
@@ -10,14 +11,10 @@ import com.prog2.appointment.integration.domain.ports.out.CatalogTechnicalTokenG
 import com.prog2.appointment.integration.infrastructure.client.dto.TechnicalTokenResponse;
 
 /** Adapter del proveedor protegido; firma una credencial propia nueva por solicitud. */
+@RequiredArgsConstructor
 public final class WebClientCatalogTechnicalTokenAdapter implements CatalogTechnicalTokenGateway {
     private final SafeIntegrationHttpClient client;
     private final ServiceTokenIssuer issuer;
-
-    public WebClientCatalogTechnicalTokenAdapter(SafeIntegrationHttpClient client, ServiceTokenIssuer issuer) {
-        this.client = client;
-        this.issuer = issuer;
-    }
 
     @Override
     public TechnicalToken fetchToken() {

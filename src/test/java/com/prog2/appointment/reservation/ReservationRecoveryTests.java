@@ -10,7 +10,7 @@ import com.prog2.appointment.reservation.domain.enums.*;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.*;
 import com.prog2.appointment.reservation.domain.ports.out.*;
-import com.prog2.appointment.reservation.infrastructure.concurrency.InMemoryReservationExecutionGuard;
+import com.prog2.appointment.reservation.application.service.ReservationExecutionGuard;
 import java.time.*;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -20,7 +20,7 @@ import org.junit.jupiter.api.*;
 class ReservationRecoveryTests {
     private static final Instant NOW = ReservationProcessTests.NOW;
     private final StartReservationTests.Memory repository = new StartReservationTests.Memory();
-    private final InMemoryReservationExecutionGuard guard = new InMemoryReservationExecutionGuard();
+    private final ReservationExecutionGuard guard = new ReservationExecutionGuard();
     private final AppointmentHoldGateway holds = mock(AppointmentHoldGateway.class);
     private final ReservationPatientGateway patients = mock(ReservationPatientGateway.class);
     private final ReservableSlotGateway slots = mock(ReservableSlotGateway.class);
@@ -43,8 +43,10 @@ class ReservationRecoveryTests {
     private RecoverReservationProcessesUseCaseImpl
             recovery(Instant now, CentralAppointmentGateway central) {
         return new RecoverReservationProcessesUseCaseImpl(
-                repository, central, start, guard, Clock.fixed(now, ZoneOffset.UTC),
-                new ReservationRecoveryPolicy(3, Duration.ofSeconds(5),
+                repository, central, start, guard,
+                mock(com.prog2.appointment.reservation.domain.ports.in.RecoverReservationCancellationsUseCase.class),
+                Clock.fixed(now, ZoneOffset.UTC),
+                new ReservationRecoveryPolicy(Duration.ofSeconds(5),
                         Duration.ofSeconds(30), Duration.ofSeconds(30)));
     }
 
@@ -54,7 +56,7 @@ class ReservationRecoveryTests {
         var central = mock(CentralAppointmentGateway.class);
         recovery(NOW.plusSeconds(31), central).recoverDue();
         assertThat(repository.find(process.id()).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+                .isEqualTo(ReservationPhase.FAILED);
         verifyNoInteractions(holds, central);
     }
 
@@ -65,14 +67,14 @@ class ReservationRecoveryTests {
         when(central.find(any())).thenReturn(java.util.Optional.empty());
         for (int second : new int[] {300, 301, 305, 310, 339})
             recovery(NOW.plusSeconds(second), central).recoverDue();
-        verify(central, times(3)).find(any());
+        verify(central, times(4)).find(any());
         assertThat(repository.find(process.id()).orElseThrow().isPending()).isTrue();
         when(central.find(any())).thenReturn(java.util.Optional.of(new CentralAppointment(
                 process.hold().centralProcessId(), process.patient().externalPatientId(), process.selection(),
                 8251, CentralAppointmentState.FAILED, null)));
-        recovery(NOW.plusSeconds(340), central).recoverDue();
+        recovery(NOW.plusSeconds(344), central).recoverDue();
         assertThat(repository.find(process.id()).orElseThrow().phase()).isEqualTo(ReservationPhase.FAILED);
-        verify(central, times(4)).find(any()); verifyNoInteractions(holds);
+        verify(central, times(5)).find(any()); verifyNoInteractions(holds);
     }
 
     @Test
@@ -122,7 +124,7 @@ class ReservationRecoveryTests {
         UUID id = process.id();
         assertThatThrownBy(() -> start.resumeKnownHold(id))
                 .isInstanceOf(com.prog2.appointment.reservation.application.exception.ReservationOperationException.class);
-        assertThat(start.resumeKnownHold(id).phase()).isEqualTo(ReservationPhase.CONFIRMATION_UNCERTAIN);
+        assertThat(start.resumeKnownHold(id).phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
         try (var _ = guard.tryAcquire(id).orElseThrow()) {
             assertThat(repository.find(id).orElseThrow().isPending()).isTrue();
         }
@@ -138,7 +140,7 @@ class ReservationRecoveryTests {
         assertThat(expired.phase()).isEqualTo(ReservationPhase.EXPIRED);
         assertThat(expired.isPending()).isFalse();
         assertThat(process.beginConfirmation().expireUnconfirmedHold(deadline).phase())
-                .isEqualTo(ReservationPhase.CONFIRMING);
+                .isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
     }
 
     @Test
@@ -165,7 +167,7 @@ class ReservationRecoveryTests {
             var first = workers.submit(() -> start.resumeKnownHold(process.id()));
             try {
                 assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-                assertThat(start.resumeKnownHold(process.id()).phase()).isEqualTo(ReservationPhase.CONFIRMING);
+                assertThat(start.resumeKnownHold(process.id()).phase()).isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
             } finally {
                 release.countDown();
             }

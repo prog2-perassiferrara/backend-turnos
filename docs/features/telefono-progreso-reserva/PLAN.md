@@ -1,33 +1,16 @@
 # PLAN: Completar teléfono y consultar progreso de reserva
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
+> Mecanismo de recepción sustituido por la [Etapa 3 de simplificación](../simplificacion-reservas/PLAN.md): deduplicación durable por `eventId`, sin auditoría de payload ni replay por asociación futura.
+
+> Actualización 2026-11-02: la [simplificación de reservas, Etapa 1](../simplificacion-reservas/SPEC.md) sustituye el abandono compensatorio y la certificación central por lectura aquí descritos. Se conserva este documento como antecedente; el contrato vigente está en README y en esa funcionalidad.
+
+
 **SPEC de referencia:** [SPEC aprobada](SPEC.md), #10/CU-05 y #11/CU-06.
 **Versión de la spec revisada:** aprobada explícitamente el 2026-10-31; D-01 a D-03 confirmadas y D-04 de recuperación automática confirmada durante PLAN. Base verificada `cac8188`, con PR #26 integrado.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** explícita del usuario el 2026-10-31. TASKS y autorización explícita de implementación confirmadas el 2026-10-31; avance y evidencia en TASKS.
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como PLAN.md junto a la SPEC.md aprobada.
-Este documento define la solución técnica. Una vez revisado, el agente puede
-derivar TASKS.md con tareas, dependencias y comprobaciones.
--->
-
-<!-- PARA EL AGENTE
-- Lee la SPEC.md aprobada, las instrucciones del proyecto y los contratos pertinentes.
-  Si falta un documento necesario o la spec no está aprobada, indícalo antes de avanzar.
-- Inspecciona el repositorio. Referencia rutas verificadas y distingue las nuevas propuestas.
-- Propón una solución proporcional al alcance y coherente con el proyecto.
-  Reutiliza lo existente y justifica nuevas dependencias o cambios de arquitectura.
-- Distingue hechos, decisiones confirmadas y propuestas. Consulta las decisiones
-  no resueltas; haz pocas preguntas por vez y actualiza el plan con las respuestas.
-- Referencia los requisitos y criterios por su ID, sin copiar toda la spec.
-- Si una decisión cambia el comportamiento o alcance, vuelve a la spec y solicita
-  confirmación. No resuelvas una duda de producto mediante una suposición técnica.
-- Conserva estos comentarios. No implementes durante la planificación.
-- Solicita aprobación antes de marcar el plan como Aprobado. La autorización
-  para implementar debe ser explícita; no se deduce del estado de los documentos.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Contexto técnico verificado
 

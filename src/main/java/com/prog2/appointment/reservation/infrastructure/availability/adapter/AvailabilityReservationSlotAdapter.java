@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.availability.adapter;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import com.prog2.appointment.availability.domain.exception.AvailabilityGatewayException;
 import com.prog2.appointment.availability.domain.ports.in.GetAvailabilityUseCase;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
@@ -11,12 +13,10 @@ import com.prog2.appointment.reservation.domain.ports.out.ReservableSlotGateway;
  * Adapter aprobado: CU-03 conserva vigencia/cálculo; no se importan sus implementaciones ni
  * excepciones internas.
  */
+@Component
+@RequiredArgsConstructor
 public final class AvailabilityReservationSlotAdapter implements ReservableSlotGateway {
     private final GetAvailabilityUseCase availability;
-
-    public AvailabilityReservationSlotAdapter(GetAvailabilityUseCase availability) {
-        this.availability = availability;
-    }
 
     @Override
     public void verify(ReservationSelection selection) {

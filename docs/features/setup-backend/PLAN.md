@@ -1,21 +1,11 @@
 # PLAN: Inicializar backend de Turnos y reservas
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **SPEC de referencia:** [SPEC.md](SPEC.md).
 **Versión revisada:** 2026-10-09, siete RF y nueve CA.
 **Estado:** Aprobado.
 **Autorización:** el usuario pidió avanzar hasta implementar si el setup era equivalente al de Catálogo. Se comprobó esa equivalencia; las adaptaciones propias se detallan abajo. No incluye CI #17 ni commits, push o merge.
-
-<!-- PARA LA PERSONA
-Este documento define la solución técnica de la SPEC aprobada. TASKS.md registra
-ejecución, dependencias y evidencias reales, sin duplicar los requisitos.
--->
-
-<!-- PARA EL AGENTE
-Leer SPEC e instrucciones vigentes; respetar alcance y autorizaciones.
-Consultar diferencias con impacto real, sin reabrir las decisiones confirmadas.
-No marcar comprobaciones superadas sin ejecutarlas. Si cambia el comportamiento,
-revisar SPEC y la aprobación correspondiente antes de implementar ese cambio.
--->
 
 ## Contexto técnico verificado
 

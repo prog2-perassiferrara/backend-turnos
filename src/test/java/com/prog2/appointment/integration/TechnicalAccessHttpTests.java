@@ -7,7 +7,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,7 +18,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import com.prog2.appointment.infrastructure.security.jwt.ServiceTokenIssuer;
-import com.prog2.appointment.integration.application.usecases.AcquireTechnicalAccessUseCaseImpl;
 import com.prog2.appointment.integration.application.usecases.TechnicalAccessUseCaseImpl;
 import com.prog2.appointment.integration.domain.enums.AccessFailure;
 import com.prog2.appointment.integration.domain.exception.IntegrationGatewayException;
@@ -27,8 +25,6 @@ import com.prog2.appointment.integration.domain.model.TechnicalToken;
 import com.prog2.appointment.integration.infrastructure.client.adapter.SafeIntegrationHttpClient;
 import com.prog2.appointment.integration.infrastructure.client.adapter.WebClientCatalogTechnicalTokenAdapter;
 import com.prog2.appointment.integration.infrastructure.client.adapter.WebClientCentralIntegrationAdapter;
-import com.prog2.appointment.integration.infrastructure.config.TechnicalAccessRecoveryAdapter;
-import com.prog2.appointment.integration.infrastructure.persistence.adapter.InMemoryTechnicalAccessAdapter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -59,27 +55,28 @@ class TechnicalAccessHttpTests {
     }
 
     @Test
-    void acquiresAccessThroughRealHttpAndKeepsItAfterCatalogFails()
-            throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
-        var repository = new InMemoryTechnicalAccessAdapter(clock);
-        var acquire = new AcquireTechnicalAccessUseCaseImpl(catalog, central, repository, clock, TestIntegrationSupport.GROUP);
-        var executor = Executors.newSingleThreadExecutor();
-        try (var recovery = new TechnicalAccessRecoveryAdapter(acquire, repository, clock, executor,
-                _ -> {}, Duration.ZERO, Duration.ofSeconds(30))) {
-            recovery.requestRecovery();
-            executor.submit(() -> {}).get(10, TimeUnit.SECONDS);
-            var access = new TechnicalAccessUseCaseImpl(repository, recovery, clock);
-            assertThat(access.getAccess().configuration().kafkaAppointmentActionsTopic()).isEqualTo("assigned-actions");
-            assertThat(PROVIDERS.catalogCalls).hasValue(1);
-            assertThat(PROVIDERS.centralCalls).hasValue(1);
-            assertThat(PROVIDERS.serviceValidationFailure.get()).isNull();
-            assertThat(PROVIDERS.centralBearer.get()).isEqualTo("Bearer " + PROVIDERS.centralToken);
-            assertThat(PROVIDERS.catalogBearer.get()).isNotEqualTo(PROVIDERS.centralBearer.get());
-            PROVIDERS.catalogStatus.set(503);
-            assertThat(access.getAccess().token().value()).isEqualTo(PROVIDERS.centralToken);
-            assertThat(PROVIDERS.catalogCalls).hasValue(1);
-            assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
-        }
+    void acquiresAccessThroughRealHttpAndKeepsItAfterCatalogFails() {
+        var access = new TechnicalAccessUseCaseImpl(catalog, central, clock, TestIntegrationSupport.GROUP);
+        access.initialize();
+        assertThat(access.getAccess().configuration().kafkaAppointmentActionsTopic()).isEqualTo("assigned-actions");
+        assertThat(PROVIDERS.catalogCalls).hasValue(1);
+        assertThat(PROVIDERS.centralCalls).hasValue(1);
+        assertThat(PROVIDERS.serviceValidationFailure.get()).isNull();
+        assertThat(PROVIDERS.centralBearer.get()).isEqualTo("Bearer " + PROVIDERS.centralToken);
+        assertThat(PROVIDERS.catalogBearer.get()).isNotEqualTo(PROVIDERS.centralBearer.get());
+        PROVIDERS.catalogStatus.set(503);
+        assertThat(access.getAccess().token().value()).isEqualTo(PROVIDERS.centralToken);
+        assertThat(PROVIDERS.catalogCalls).hasValue(1);
+        assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"PENDING,PROVISIONING_PENDING", "FAILED,INTEGRATION_NOT_READY", "REVOKED,INTEGRATION_NOT_READY"})
+    void nonReadyProvisioningIsRejectedByTheHttpBoundary(String status, AccessFailure failure) {
+        PROVIDERS.centralBody.set(TestIntegrationSupport.configuration(status));
+        var token = new TechnicalToken(PROVIDERS.centralToken, null);
+        assertThatThrownBy(() -> central.fetchConfiguration(token)).isInstanceOfSatisfying(
+                IntegrationGatewayException.class, error -> assertThat(error.failure()).isEqualTo(failure));
     }
 
     @Test

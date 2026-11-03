@@ -1,5 +1,6 @@
 package com.prog2.appointment.availability.infrastructure.client;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Duration;
 import java.util.function.BiFunction;
 import org.springframework.http.HttpHeaders;
@@ -11,16 +12,11 @@ import com.prog2.appointment.availability.domain.enums.AvailabilityFailure;
 import com.prog2.appointment.availability.domain.exception.AvailabilityGatewayException;
 
 /** GET acotado compartido por los dos adaptadores; la clasificación del proveedor no sale de infraestructura. */
+@RequiredArgsConstructor
 public final class AvailabilityHttpClient {
     private final WebClient client;
     private final Duration totalTimeout;
     private final AvailabilityFailure unavailable;
-
-    public AvailabilityHttpClient(WebClient client, Duration totalTimeout, AvailabilityFailure unavailable) {
-        this.client = client;
-        this.totalTimeout = totalTimeout;
-        this.unavailable = unavailable;
-    }
 
     /**
      * @param path ruta contractual construida con identificadores/fechas validados

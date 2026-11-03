@@ -1,33 +1,10 @@
 # SPEC: Consultar disponibilidad de turnos
 
+> **Registro histórico SDD.** Alcance, diagramas y evidencia de su revisión; no describen necesariamente el sistema actual. Consultar [arquitectura vigente](../../ARQUITECTURA.md), [contratos](../../CONTRATOS.md) e [índice histórico](../README.md).
+
 **Estado:** Aprobada <!-- Borrador | En revisión | Aprobada -->
 **Revisión:** 2026-10-29. Issue [#8](https://github.com/prog2-perassiferrara/backend-turnos/issues/8), [CU-03 aprobado](../../use-cases/CU-03-consultar-disponibilidad.md).
 **Aprobación:** explícita del usuario el 2026-10-29. Autoriza preparar el PLAN, no implementar.
-
-<!-- PARA LA PERSONA
-Copia esta plantilla como SPEC.md en una carpeta de la funcionalidad.
-Pide al agente que la complete contigo según el enunciado y los contratos del backend.
-SPEC.md define qué debe cumplirse; PLAN.md desarrolla cómo implementarlo;
-TASKS.md organiza los pasos de ejecución.
--->
-
-<!-- PARA EL AGENTE
-- Lee las instrucciones del proyecto y los contratos pertinentes. Inspecciona el
-  repositorio para comprobar el comportamiento actual.
-- Completa esta spec con la persona: investiga lo comprobable y consulta las
-  decisiones pendientes. Haz pocas preguntas por vez y actualiza las respuestas.
-- No inventes requisitos ni exclusiones. Distingue propuestas de decisiones
-  confirmadas y marca como PENDIENTE lo que aún no esté resuelto.
-- Considera errores, concurrencia, integración y recuperación cuando apliquen,
-  sin ampliar el alcance automáticamente.
-- No incluyas diseño de clases, tablas, componentes, archivos o algoritmos:
-  esos detalles pertenecen a PLAN.md. Sí registra restricciones explícitas del pedido.
-- Mantén el documento breve y proporcional a la funcionalidad. Conserva los comentarios.
-- Un documento completo no está aprobado automáticamente. Solicita aprobación
-  antes de marcarlo como Aprobada. No implementes durante esta etapa.
-- Para cambios de significado posteriores a la aprobación, registra una nota
-  breve de cambio, motivo e impacto según AGENTS.md, sin historial separado.
--->
 
 ## Qué construimos y para quién
 

@@ -2,7 +2,6 @@ package com.prog2.appointment.reservation.domain.ports.out;
 
 import com.prog2.appointment.reservation.domain.model.OwnReservationPage;
 
-import com.prog2.appointment.reservation.domain.enums.CancellationKind;
 import com.prog2.appointment.reservation.domain.model.CancellationEvidence;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,10 +12,10 @@ import java.util.function.UnaryOperator;
 import com.prog2.appointment.reservation.domain.model.CentralAppointment;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 import com.prog2.appointment.reservation.domain.model.SubmitPhoneRequest;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
+import com.prog2.appointment.reservation.domain.model.ReservationAction;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 
-/** Repository de procesos e inbox; todas sus escrituras regresan después del commit verificable. */
+/** Persistencia de procesos y deduplicación; las escrituras retornan tras confirmar su transacción. */
 public interface ReservationProcessRepository {
     Optional<ReservationProcess> find(UUID id);
 
@@ -52,27 +51,31 @@ public interface ReservationProcessRepository {
     /**
      * @param id hold local conocido
      * @param now instante de reclamación, anterior al vencimiento
-     * @return permiso propio acreditado HELD a CONFIRMING; vacío nunca permite emitir el POST
+     * @return permiso propio acreditado HELD a CONFIRMATION_PENDING; vacío nunca permite emitir el POST
      */
     Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now);
 
-    /** @return hasta limit pendientes elegibles, sin seleccionar históricos cerrados ni trabajo de cancelación activo */
+    /** @return hasta limit pendientes elegibles, incluidas cancelaciones pendientes, sin seleccionar históricos ya resueltos */
     List<UUID> dueRecovery(Instant now, Duration initialDelay, int limit);
 
     /**
-     * Conserva el presupuesto de revisión y la próxima fecha antes de consultar cátedra.
+     * Conserva la próxima fecha de revisión antes de consultar cátedra.
      * @return progreso actual reclamado; no concede permiso para un POST
      */
-    Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts, Duration retry, Duration cooldown);
+    Optional<ReservationProcess> beginRecovery(UUID id, Instant now, Duration retry, Duration initialDelay);
 
     /** Difiere un trabajo que sigue activo, sin gastar intentos ni modificar su fase. */
     void deferRecovery(UUID id, Instant nextAttempt);
 
-    /** Reprocesa hasta limit recibos válidos diferidos cuya asociación local ya existe. */
-    void replayDeferredKnown(int limit);
-
-    /** Guarda recibo y cambio juntos; una repetición nunca reaplica los efectos confirmados. */
-    void accept(ReservationDelivery delivery);
+    /**
+     * Guarda eventId y cambio juntos; una repetición nunca reaplica los efectos confirmados.
+     * Los hechos válidos desconocidos se marcan sin crear procesos ni conservarlos para replay.
+     *
+     * @param action hecho externo validado con su correlación contractual
+     * @throws com.prog2.appointment.reservation.domain.exception.ReservationStorageException si
+     *     no se puede acreditar el commit; el consumidor debe permitir redelivery
+     */
+    void accept(ReservationAction action);
 
     /**
      * Acepta proceso y respuesta juntos. Comprueba propietario antes de reconocer UUID históricos;
@@ -105,25 +108,26 @@ public interface ReservationProcessRepository {
     ReservationProcess reconcile(UUID id, CentralAppointment evidence, Instant now);
 
     /**
-     * Acepta intención/reintento y pausa outbox juntos, comprobando propietario antes del replay.
-     * @return proceso confirmado y permiso de ejecutar únicamente el ciclo recién aceptado
+     * Acepta una cancelación confirmada o su reintento, comprobando propietario antes del replay.
+     * @return proceso con intención durable, sin conceder por sí mismo permiso para HTTP
      * @throws com.prog2.appointment.reservation.domain.exception.ReservationCancellationException
      *     si no pertenece al propietario o la acción es incompatible
      */
-    CancellationAcceptance requestCancellation(long ownerId, UUID id, CancellationKind kind,
-            Integer retryVersion, Instant now);
-
-    /** @return hasta limit procesos con ejecución pendiente y presupuesto disponible */
-    List<UUID> dueCancellations(Instant now, int limit);
+    ReservationProcess requestCancellation(long ownerId, UUID id, Instant now);
 
     /** @return reclamación propia confirmada; vacío si ya no corresponde o la ganó otro worker */
     Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now, Duration budget);
 
+    /**
+     * Finaliza solo la ejecución cuyo writeId sigue vigente, sin sobrescribir resultados tardíos.
+     * @param requireRetry detiene POST automáticos hasta una nueva solicitud del propietario
+     * @param nextReview fecha de próxima consulta central, sin contador durable de intentos
+     */
+    void finishCancellationAttempt(UUID id, UUID writeId, boolean requireRetry, String failure,
+            Instant now, Instant nextReview);
+
     /** Aplica evidencia al estado actual y resuelve intención/outbox en la misma transacción. */
     ReservationProcess confirmCancellation(UUID id, CancellationEvidence evidence, Instant now);
-
-    /** Aceptación del ciclo distinta de la mera existencia de una intención previa. */
-    record CancellationAcceptance(ReservationProcess process, boolean accepted) {}
 
     /** Resultado durable de aceptación o replay. */
     record PhoneResult(ReservationProcess process, PhoneSubmission phone, boolean created) {}

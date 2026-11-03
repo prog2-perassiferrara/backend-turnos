@@ -1,5 +1,6 @@
 package com.prog2.appointment.reservation.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
@@ -21,17 +22,11 @@ import reactor.core.publisher.Mono;
 /**
  * Adapter REST con un intento explícito; la recuperación de sesión no repite el efecto de negocio.
  */
+@RequiredArgsConstructor
 public final class WebClientAppointmentHoldAdapter implements AppointmentHoldGateway {
     private final WebClient client;
     private final TechnicalAccessUseCase access;
     private final Duration timeout;
-
-    public WebClientAppointmentHoldAdapter(
-            WebClient client, TechnicalAccessUseCase access, Duration timeout) {
-        this.client = client;
-        this.access = access;
-        this.timeout = timeout;
-    }
 
     @Override
     public HoldDetails create(ReservationProcess process) {

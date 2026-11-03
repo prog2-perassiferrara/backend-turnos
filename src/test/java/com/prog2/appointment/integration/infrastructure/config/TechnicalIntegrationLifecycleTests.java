@@ -1,64 +1,37 @@
 package com.prog2.appointment.integration.infrastructure.config;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import static org.assertj.core.api.Assertions.*;
+import java.time.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import com.prog2.appointment.integration.domain.enums.AccessFailure;
-import com.prog2.appointment.integration.domain.model.AcquisitionResult;
-import com.prog2.appointment.integration.domain.ports.in.AcquireTechnicalAccessUseCase;
-import com.prog2.appointment.integration.infrastructure.persistence.adapter.InMemoryTechnicalAccessAdapter;
-import static org.assertj.core.api.Assertions.assertThat;
+import com.prog2.appointment.integration.application.exception.TechnicalAccessUnavailableException;
+import com.prog2.appointment.integration.application.usecases.TechnicalAccessUseCaseImpl;
+import com.prog2.appointment.integration.domain.model.*;
 
-/** Comprueba el cierre inferido por Spring con el ejecutor real creado por la configuración productiva. */
+/** El evento de arranque ejecuta la adquisición en su propio hilo, sin un worker adicional. */
 class TechnicalIntegrationLifecycleTests {
     @Test
-    void closingSpringContextInterruptsAndTerminatesOwnedWorker() throws InterruptedException {
-        var entered = new CountDownLatch(1);
-        var interrupted = new CountDownLatch(1);
-        var worker = new AtomicReference<Thread>();
-        var attempts = new AtomicInteger();
-        Clock clock = Clock.systemUTC();
-        var repository = new InMemoryTechnicalAccessAdapter(clock);
-        AcquireTechnicalAccessUseCase acquire = _ -> {
-            attempts.incrementAndGet();
-            worker.set(Thread.currentThread());
-            entered.countDown();
-            try {
-                new CountDownLatch(1).await();
-            } catch (InterruptedException _) {
-                interrupted.countDown();
-                Thread.currentThread().interrupt();
-            }
-            return AcquisitionResult.failed(null, AccessFailure.TEMPORARY_UNAVAILABLE);
-        };
-
-        try {
-            TechnicalAccessRecoveryAdapter recovery;
-            try (var context = new AnnotationConfigApplicationContext()) {
-                // Aísla el ciclo de vida: usa la fábrica productiva, sin proveedores HTTP ni base de datos.
-                context.registerBean(TechnicalAccessRecoveryAdapter.class,
-                        () -> new TechnicalIntegrationConfiguration().technicalAccessRecovery(acquire, repository, clock));
-                context.refresh();
-                recovery = context.getBean(TechnicalAccessRecoveryAdapter.class);
-                recovery.requestRecovery();
-                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-            }
-            assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(worker.get().join(Duration.ofSeconds(5))).isTrue();
-            recovery.requestRecovery();
-            assertThat(attempts).hasValue(1);
-        } finally {
-            // Evita dejar un hilo propio incluso si una regresión impide que Spring lo cierre.
-            Thread thread = worker.get();
-            if (thread != null) {
-                thread.interrupt();
-                thread.join(Duration.ofSeconds(5));
-            }
+    void applicationReadyAcquiresSynchronouslyAndConsumptionDoesNotStartBackgroundWork() {
+        var calls = new AtomicInteger();
+        var execution = new AtomicReference<Thread>();
+        var access = new TechnicalAccessUseCaseImpl(() -> {
+            execution.set(Thread.currentThread()); calls.incrementAndGet();
+            return new TechnicalToken("fictional", null);
+        }, _ -> new IntegrationConfiguration("appointment-test", "fictional:9092", "consumer", "actions", "phone"),
+                Clock.systemUTC(), "appointment-test");
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.addApplicationListener(new TechnicalIntegrationConfiguration().initializeTechnicalAccess(access));
+            context.refresh();
+            assertThatThrownBy(access::getAccess).isInstanceOf(TechnicalAccessUnavailableException.class);
+            context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0], context, Duration.ZERO));
+            assertThat(access.getAccess().configuration().groupId()).isEqualTo("appointment-test");
+            assertThat(execution.get()).isSameAs(Thread.currentThread());
+            access.getAccess();
+            assertThat(calls).hasValue(1);
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.prog2.appointment.availability.infrastructure.client.adapter;
 
+import lombok.RequiredArgsConstructor;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -14,14 +15,10 @@ import com.prog2.appointment.availability.infrastructure.client.dto.AppointmentO
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 
 /** Adapter de ocupaciones; compone únicamente el puerto público de integración, sin acceder a su estado interno. */
+@RequiredArgsConstructor
 public final class WebClientAppointmentOccupanciesAdapter implements AppointmentOccupanciesGateway {
     private final AvailabilityHttpClient client;
     private final TechnicalAccessUseCase access;
-
-    public WebClientAppointmentOccupanciesAdapter(AvailabilityHttpClient client, TechnicalAccessUseCase access) {
-        this.client = client;
-        this.access = access;
-    }
 
     @Override
     public List<AppointmentOccupancy> get(long professionalId, LocalDate date) {

@@ -1,5 +1,6 @@
 package com.prog2.appointment.user.infrastructure.persistence.adapter;
 
+import lombok.RequiredArgsConstructor;
 import java.sql.SQLException;
 import java.util.Optional;
 import org.springframework.dao.DataAccessException;
@@ -15,12 +16,9 @@ import com.prog2.appointment.user.infrastructure.persistence.service.Transaction
 
 /** Adapter/Repository: traduce errores técnicos después del proxy, sin propagar SQL ni datos privados. */
 @Component
+@RequiredArgsConstructor
 public final class JpaUserAccountAdapter implements UserAccountRepository {
     private final TransactionalUserAccountStore store;
-
-    public JpaUserAccountAdapter(TransactionalUserAccountStore store) {
-        this.store = store;
-    }
 
     @Override
     public void createActiveUser(RegistrationData data, String passwordHash) {

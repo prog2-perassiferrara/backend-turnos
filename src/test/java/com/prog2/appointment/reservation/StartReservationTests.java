@@ -1,7 +1,6 @@
 package com.prog2.appointment.reservation;
 
-import com.prog2.appointment.reservation.infrastructure.concurrency.InMemoryReservationExecutionGuard;
-import com.prog2.appointment.reservation.domain.ports.out.ReservationExecutionGuard;
+import com.prog2.appointment.reservation.application.service.ReservationExecutionGuard;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.any;
@@ -10,6 +9,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -35,7 +35,7 @@ import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.HoldDetails;
 import com.prog2.appointment.reservation.domain.model.HoldOccupancy;
-import com.prog2.appointment.reservation.domain.model.ReservationDelivery;
+import com.prog2.appointment.reservation.domain.model.ReservationAction;
 import com.prog2.appointment.reservation.domain.model.ReservationPatient;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.model.ReservationSelection;
@@ -57,7 +57,7 @@ class StartReservationTests {
     private final ReservationMessagingReadiness messaging =
             mock(ReservationMessagingReadiness.class);
     private final ReservationExecutionGuard guard =
-            new InMemoryReservationExecutionGuard();
+            new ReservationExecutionGuard();
     private StartReservationUseCaseImpl start;
     private StartReservationRequest request;
 
@@ -82,7 +82,7 @@ class StartReservationTests {
                         call -> {
                             var value = call.getArgument(0, ReservationProcess.class);
                             assertThat(repository.find(value.id()).orElseThrow().phase())
-                                    .isEqualTo(ReservationPhase.CREATING_HOLD);
+                                    .isEqualTo(ReservationPhase.HOLD_PENDING);
                             return ReservationProcessTests.HOLD;
                         });
         when(holds.confirm(any()))
@@ -90,7 +90,7 @@ class StartReservationTests {
                         call -> {
                             var value = call.getArgument(0, ReservationProcess.class);
                             assertThat(repository.find(value.id()).orElseThrow().phase())
-                                    .isEqualTo(ReservationPhase.CONFIRMING);
+                                    .isEqualTo(ReservationPhase.CONFIRMATION_PENDING);
                             return ReservationProcessTests.HOLD;
                         });
     }
@@ -172,7 +172,7 @@ class StartReservationTests {
         assertThatThrownBy(() -> start.start(42, request))
                 .isInstanceOf(ReservationOperationException.class);
         assertThat(repository.find(request.requestId()).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+                .isEqualTo(ReservationPhase.FAILED);
         assertThat(start.start(42, request).replayed()).isTrue();
         assertThat(repository.findPending(42)).isEmpty();
         verify(holds, times(3)).create(any());
@@ -202,7 +202,7 @@ class StartReservationTests {
                                     .isEqualTo(ReservationProcessTests.HOLD.expiresAt());
                         });
         var closed = repository.find(request.requestId()).orElseThrow();
-        assertThat(closed.phase()).isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+        assertThat(closed.phase()).isEqualTo(ReservationPhase.FAILED);
         assertThat(closed.hold()).isNull();
         assertThat(closed.isPending()).isFalse();
         verify(holds, times(1)).create(any());
@@ -240,7 +240,7 @@ class StartReservationTests {
                         call -> {
                             var process = call.getArgument(0, ReservationProcess.class);
                             assertThat(repository.find(process.id()).orElseThrow().phase())
-                                    .isEqualTo(ReservationPhase.CREATING_HOLD);
+                                    .isEqualTo(ReservationPhase.HOLD_PENDING);
                             if (attempts.incrementAndGet() == 1) {
                                 throw new ReservationGatewayException(
                                         ReservationFailure.HOLD_CREATION_UNCERTAIN, true, false);
@@ -317,7 +317,7 @@ class StartReservationTests {
                                 assertThat(failure.failure())
                                         .isEqualTo(ReservationFailure.SLOT_NOT_AVAILABLE));
         assertThat(repository.find(request.requestId()).orElseThrow().phase())
-                .isEqualTo(ReservationPhase.HOLD_ATTEMPT_ABANDONED);
+                .isEqualTo(ReservationPhase.FAILED);
         verify(holds, times(2)).create(any());
         verify(holds, times(1)).findOccupancy(any());
     }
@@ -428,7 +428,7 @@ class StartReservationTests {
                                 Instant.parse("2027-01-01T00:00:00Z"),
                                 ZoneId.of("America/Argentina/Buenos_Aires")),
                         3);
-        assertThat(later.start(42, request).process().phase()).isEqualTo(ReservationPhase.REJECTED);
+        assertThat(later.start(42, request).process().phase()).isEqualTo(ReservationPhase.FAILED);
         verifyNoInteractions(patients, slots, holds);
     }
 
@@ -442,10 +442,26 @@ class StartReservationTests {
         assertThat(repository.find(request.requestId()).orElseThrow().isPending()).isFalse();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = CommitFaultDataSource.Mode.class, names = {"BEFORE", "AFTER"})
+    void anUncertainConfirmationCheckpointCannotReachTheTransport(CommitFaultDataSource.Mode mode) {
+        var storage = spy(repository);
+        doAnswer(call -> {
+            if (mode == CommitFaultDataSource.Mode.AFTER) call.callRealMethod();
+            throw new com.prog2.appointment.reservation.domain.exception.ReservationStorageException();
+        }).when(storage).beginInitialConfirmation(any(), any());
+        var operation = new StartReservationUseCaseImpl(patients, slots, holds, storage, messaging, guard,
+                Clock.fixed(ReservationProcessTests.NOW, ZoneId.of("America/Argentina/Buenos_Aires")), 3);
+        assertThatThrownBy(() -> operation.start(42, request)).isInstanceOf(ReservationOperationException.class);
+        verify(holds, times(1)).create(any());
+        verify(holds, never()).confirm(any());
+        assertThat(storage.find(request.requestId()).orElseThrow().phase()).isEqualTo(
+                mode == CommitFaultDataSource.Mode.AFTER ? ReservationPhase.CONFIRMATION_PENDING : ReservationPhase.HELD);
+    }
+
     static final class Memory implements ReservationProcessRepository {
         final Map<UUID, ReservationProcess> values = new java.util.concurrent.ConcurrentHashMap<>();
         final Map<UUID, Instant> recoveryNext = new HashMap<>();
-        final Map<UUID, Integer> recoveryAttempts = new HashMap<>();
 
         @Override
         public com.prog2.appointment.reservation.domain.model.OwnReservationPage readOwn(
@@ -485,7 +501,7 @@ class StartReservationTests {
         @Override
         public synchronized Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now) {
             var before = values.get(id);
-            if (before.phase() != ReservationPhase.HELD || before.abandonmentPending()
+            if (before.phase() != ReservationPhase.HELD
                     || !now.isBefore(before.hold().expiresAt())) return Optional.empty();
             var after = update(id, ReservationProcess::beginConfirmation);
             return Optional.of(after);
@@ -493,25 +509,22 @@ class StartReservationTests {
 
         @Override
         public java.util.List<UUID> dueRecovery(Instant now, java.time.Duration initialDelay, int limit) {
-            return values.values().stream().filter(p -> p.isPending()
-                    || p.cancellation() != null && p.cancellation().state()
-                        == com.prog2.appointment.reservation.domain.enums.CancellationState.PENDING)
-                    .filter(p -> p.cancellation() == null || p.cancellation().state()
-                        != com.prog2.appointment.reservation.domain.enums.CancellationState.PENDING
-                        || p.cancellation().attempts() >= 3)
-                    .filter(p -> !now.isBefore(recoveryNext.getOrDefault(p.id(), ReservationProcessTests.NOW.plus(initialDelay))))
+            return values.values().stream().filter(p -> p.isPending() || p.cancellation() != null)
+                    .filter(p -> !now.isBefore(recoveryNext.getOrDefault(p.id(),
+                            p.cancellation() != null ? ReservationProcessTests.NOW : ReservationProcessTests.NOW.plus(initialDelay))))
                     .sorted(java.util.Comparator.comparing(ReservationProcess::id)).limit(limit)
                     .map(ReservationProcess::id).toList();
         }
 
         @Override
-        public synchronized Optional<ReservationProcess> beginRecovery(UUID id, Instant now, int attempts,
-                java.time.Duration retry, java.time.Duration cooldown) {
-            if (!dueRecovery(now, cooldown, Integer.MAX_VALUE).contains(id)) return Optional.empty();
-            int count = recoveryAttempts.getOrDefault(id, 0);
-            count = count >= attempts ? 1 : count + 1;
-            recoveryAttempts.put(id, count);
-            recoveryNext.put(id, now.plus(count >= attempts ? cooldown : retry));
+        public synchronized Optional<ReservationProcess> beginRecovery(UUID id, Instant now,
+                java.time.Duration retry, java.time.Duration initialDelay) {
+            if (!dueRecovery(now, initialDelay, Integer.MAX_VALUE).contains(id)) return Optional.empty();
+            var process = values.get(id);
+            var next = now.plus(retry);
+            if (process.hold() != null && now.isBefore(process.hold().expiresAt())
+                    && process.hold().expiresAt().isBefore(next)) next = process.hold().expiresAt();
+            recoveryNext.put(id, next);
             return find(id);
         }
 
@@ -520,10 +533,7 @@ class StartReservationTests {
             recoveryNext.merge(id, nextAttempt, (old, next) -> old.isAfter(next) ? old : next);
         }
 
-        @Override
-        public void replayDeferredKnown(int limit) {
-            // Este doble no acepta entregas; el reproceso del inbox se comprueba con MySQL real.
-        }
+
 
         @Override
         public PhoneResult submitPhone(
@@ -576,32 +586,45 @@ class StartReservationTests {
             return update(id, value -> value.reconcile(evidence, now));
         }
 
+        private static ReservationProcess cancellationWrite(ReservationProcess p) {
+            return new ReservationProcess(p.id(), p.patient(), p.selection(), p.phase(), p.hold(),
+                    p.requestEventId(), p.reservationId(), p.reasonCode(), UUID.randomUUID(), p.closedAt(),
+                    p.professionalName(), p.cancellation());
+        }
+
         @Override
-        public CancellationAcceptance requestCancellation(long ownerId, UUID id,
-                com.prog2.appointment.reservation.domain.enums.CancellationKind kind,
-                Integer retryVersion, Instant now) {
+        public synchronized ReservationProcess requestCancellation(long ownerId, UUID id, Instant now) {
             var before = values.get(id);
             if (before == null || before.ownerId() != ownerId) throw new
                     com.prog2.appointment.reservation.domain.exception.ReservationCancellationException(
                             com.prog2.appointment.reservation.domain.enums.ReservationFailure.RESERVATION_PROCESS_NOT_FOUND);
-            var after = before.requestCancellation(kind, retryVersion, now);
-            values.put(id, after);
-            return new CancellationAcceptance(after, !after.equals(before));
+            var after = before.requestCancellation();
+            if (!after.equals(before)) {
+                after = cancellationWrite(after);
+                values.put(id, after);
+                recoveryNext.put(id, now);
+            }
+            return after;
         }
 
         @Override
-        public java.util.List<UUID> dueCancellations(Instant now, int limit) {
-            return values.values().stream().filter(p -> p.cancellation() != null
-                    && p.cancellation().isDue(now)).limit(limit).map(ReservationProcess::id).toList();
-        }
-
-        @Override
-        public Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
+        public synchronized Optional<ReservationProcess> beginCancellationAttempt(UUID id, Instant now,
                 java.time.Duration budget) {
             var before = values.get(id);
-            var after = before.claimCancellation(now, budget);
+            if (before.cancellation() == null || now.isBefore(recoveryNext.getOrDefault(id, now))) return Optional.empty();
+            var after = cancellationWrite(before);
             values.put(id, after);
-            return before.equals(after) ? Optional.empty() : Optional.of(after);
+            recoveryNext.put(id, now.plus(budget));
+            return Optional.of(after);
+        }
+
+        @Override
+        public synchronized void finishCancellationAttempt(UUID id, UUID writeId, boolean requireRetry, String failure,
+                Instant now, Instant nextReview) {
+            var before = values.get(id);
+            if (!before.writeId().equals(writeId) || before.cancellation() == null) return;
+            if (requireRetry) values.put(id, before.requireCancellationRetry(failure));
+            recoveryNext.put(id, nextReview);
         }
 
         @Override
@@ -611,7 +634,7 @@ class StartReservationTests {
         }
 
         @Override
-        public void accept(ReservationDelivery delivery) {
+        public void accept(ReservationAction delivery) {
             throw new UnsupportedOperationException();
         }
     }

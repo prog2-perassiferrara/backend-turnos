@@ -1,5 +1,6 @@
 package com.prog2.appointment.availability.application.usecases;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -14,19 +15,12 @@ import com.prog2.appointment.availability.domain.ports.out.AppointmentOccupancie
 import com.prog2.appointment.availability.domain.ports.out.ProfessionalAgendaGateway;
 
 /** Orquesta CU-03 mediante puertos; no conoce JWT, HTTP, almacenamiento ni estado de otra consulta. */
+@RequiredArgsConstructor
 public final class GetAvailabilityUseCaseImpl implements GetAvailabilityUseCase {
     private final ProfessionalAgendaGateway agendas;
     private final AppointmentOccupanciesGateway occupancies;
     private final Clock clock;
     private final ZoneId zone;
-
-    public GetAvailabilityUseCaseImpl(ProfessionalAgendaGateway agendas, AppointmentOccupanciesGateway occupancies,
-            Clock clock, ZoneId zone) {
-        this.agendas = agendas;
-        this.occupancies = occupancies;
-        this.clock = clock;
-        this.zone = zone;
-    }
 
     @Override
     public Availability get(long professionalId, LocalDate date) {

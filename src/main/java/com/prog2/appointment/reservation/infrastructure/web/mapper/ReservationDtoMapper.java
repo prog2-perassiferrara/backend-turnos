@@ -5,7 +5,6 @@ import com.prog2.appointment.reservation.infrastructure.web.dto.OwnReservationsR
 import com.prog2.appointment.reservation.infrastructure.web.dto.ReservationHistoryResponse;
 
 import java.time.format.DateTimeFormatter;
-import java.time.Clock;
 import com.prog2.appointment.reservation.domain.model.ReservationStatus;
 import org.springframework.stereotype.Component;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
@@ -19,12 +18,6 @@ import com.prog2.appointment.reservation.infrastructure.web.dto.StartReservation
  */
 @Component
 public final class ReservationDtoMapper {
-    private final Clock clock;
-
-    public ReservationDtoMapper(Clock clock) {
-        this.clock = clock;
-    }
-
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     /**
@@ -41,10 +34,7 @@ public final class ReservationDtoMapper {
                                 + (result.totalElements() % result.size() == 0 ? 0 : 1));
         return new OwnReservationsResponse(
                 result.pending() == null ? null : toResponse(result.pending()),
-                history,
-                result.verificationStatus().name(),
-                result.verifiedAt(),
-                result.warningCode());
+                history);
     }
 
     public StartReservationRequest toRequest(StartReservationBody body) {
@@ -59,8 +49,6 @@ public final class ReservationDtoMapper {
                         process,
                         null,
                         false,
-                        com.prog2.appointment.reservation.domain.enums.VerificationStatus.LOCAL,
-                        null,
                         null));
     }
 
@@ -75,12 +63,10 @@ public final class ReservationDtoMapper {
                 process.hold() == null ? null : process.hold().expiresAt(),
                 process.reasonCode(),
                 status.phoneRequestId(),
-                process.requestEventId() == null || process.phase().isFinal() || process.abandonmentPending()
+                process.requestEventId() == null || process.phase().isFinal()
                         ? null
                         : "PHONE_NUMBER",
                 status.canSubmitPhone(),
-                status.verificationStatus().name(),
-                status.verifiedAt(),
                 status.warningCode(),
                 process.professionalName() == null ? null : process.professionalName().firstName(),
                 process.professionalName() == null ? null : process.professionalName().lastName(),
@@ -89,10 +75,8 @@ public final class ReservationDtoMapper {
     private ReservationProcessResponse.CancellationView cancellation(ReservationProcess process) {
         var progress = process.cancellation();
         if (progress == null) return null;
-        boolean canRetry = progress.canRetry(clock.instant());
-        return new ReservationProcessResponse.CancellationView(progress.kind().name(),
-                progress.state().name(), progress.requestedAt(), progress.lastFailure(), canRetry,
-                canRetry ? progress.retryVersion() : null);
+        return new ReservationProcessResponse.CancellationView(progress.name(),
+                progress == com.prog2.appointment.reservation.domain.enums.CancellationState.RETRY_REQUIRED);
     }
 
 }
