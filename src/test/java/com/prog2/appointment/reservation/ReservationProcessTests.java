@@ -31,7 +31,7 @@ class ReservationProcessTests {
     static ReservationProcess creating() {
         return ReservationProcess.begin(
                 new StartReservationRequest(UUID.randomUUID(), SLOT),
-                new ReservationPatient(42, "Paciente", "Ficticio"));
+                new ReservationPatient(42, "Paciente", "Ficticio"), null);
     }
 
     static ReservationProcess confirming() {
@@ -50,6 +50,17 @@ class ReservationProcessTests {
                 type == ReservationActionType.CONFIRMED || type == ReservationActionType.CANCELLED
                         ? SLOT
                         : null);
+    }
+
+    @Test
+    void laterReconciliationDoesNotReplaceTheInitialHistoricalName() {
+        var name = new com.prog2.appointment.reservation.domain.model.ProfessionalName("Ana", "Torres");
+        var process = ReservationProcess.begin(new StartReservationRequest(UUID.randomUUID(), SLOT),
+                new ReservationPatient(42, "Paciente", "Ficticio"), name).acceptHold(HOLD).beginConfirmation();
+        var evidence = ListOwnReservationsTests.evidence(process,
+                com.prog2.appointment.reservation.domain.enums.CentralAppointmentState.CONFIRMED,
+                new com.prog2.appointment.reservation.domain.model.ProfessionalName("Otra", "Persona"));
+        assertThat(process.reconcile(evidence, NOW).professionalName()).isEqualTo(name);
     }
 
     @Test

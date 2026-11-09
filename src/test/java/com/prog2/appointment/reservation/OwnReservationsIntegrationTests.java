@@ -168,7 +168,7 @@ class OwnReservationsIntegrationTests {
                         new StartReservationRequest(
                                 UUID.randomUUID(),
                                 new ReservationSelection(15, date, LocalTime.of(9, 0))),
-                        new ReservationPatient(owner, "Paciente", "Ficticio"));
+                        new ReservationPatient(owner, "Paciente", "Ficticio"), null);
         if (central)
             process =
                     process.acceptHold(
@@ -490,7 +490,7 @@ class OwnReservationsIntegrationTests {
                                                     15,
                                                     LocalDate.of(2026, 11, 2),
                                                     LocalTime.of(9, 0))),
-                                    new ReservationPatient(owner, "Paciente", "Ficticio"))
+                                    new ReservationPatient(owner, "Paciente", "Ficticio"), null)
                             .recordFailure(
                                     new ReservationGatewayException(
                                             ReservationFailure.SLOT_NOT_AVAILABLE, false, true),

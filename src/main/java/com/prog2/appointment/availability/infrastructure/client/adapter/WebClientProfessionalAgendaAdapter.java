@@ -59,7 +59,8 @@ public final class WebClientProfessionalAgendaAdapter implements ProfessionalAge
             return new WeeklySchedule(DayOfWeek.valueOf(schedule.dayOfWeek()), LocalTime.parse(schedule.startTime()),
                     LocalTime.parse(schedule.endTime()), schedule.slotDurationMinutes(), schedule.enabled());
         }).toList();
-        return new ProfessionalAgenda(id, professional.enabled(), schedules);
+        return new ProfessionalAgenda(id, professional.enabled(), schedules,
+                professional.firstName(), professional.lastName());
     }
 
     private static AvailabilityFailure classify(int status, String code) {

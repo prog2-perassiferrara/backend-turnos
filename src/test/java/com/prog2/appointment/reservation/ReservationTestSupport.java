@@ -157,7 +157,7 @@ public final class ReservationTestSupport implements AutoCloseable {
                     exchange,
                     200,
                     """
-                    {"professional":{"id":%d,"enabled":true},"weeklySchedules":[
+                    {"professional":{"id":%d,"enabled":true,"firstName":"Ana","lastName":"Torres"},"weeklySchedules":[
                     {"id":21,"professionalId":%d,"dayOfWeek":"MONDAY","startTime":"09:00","endTime":"11:00","slotDurationMinutes":30,"enabled":true}],
                     "catalog":{"state":"CURRENT","copyAvailable":true,"appliedVersion":1,"observedVersion":1,
                     "lastCheckedAt":"2026-11-02T11:00:00Z","evaluatedAt":"2026-11-02T11:00:00Z"}}

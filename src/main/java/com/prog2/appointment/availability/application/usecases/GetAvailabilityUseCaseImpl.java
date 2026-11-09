@@ -36,7 +36,7 @@ public final class GetAvailabilityUseCaseImpl implements GetAvailabilityUseCase 
         var candidates = agenda.candidateStarts(date).stream()
                 .filter(time -> date.atTime(time).isAfter(admittedAt)).toList();
         if (candidates.isEmpty()) {
-            return new Availability(professionalId, date, zone, List.of());
+            return new Availability(professionalId, date, zone, List.of(), agenda.firstName(), agenda.lastName());
         }
         var occupied = occupancies.get(professionalId, date);
         var now = clock.instant();
@@ -45,6 +45,6 @@ public final class GetAvailabilityUseCaseImpl implements GetAvailabilityUseCase 
                 .map(AppointmentOccupancy::startTime).collect(Collectors.toSet());
         var available = candidates.stream().filter(time -> date.atTime(time).isAfter(localNow))
                 .filter(time -> !blocked.contains(time)).toList();
-        return new Availability(professionalId, date, zone, available);
+        return new Availability(professionalId, date, zone, available, agenda.firstName(), agenda.lastName());
     }
 }

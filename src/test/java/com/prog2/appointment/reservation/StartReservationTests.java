@@ -96,6 +96,23 @@ class StartReservationTests {
     }
 
     @Test
+    void admissionPreservesTheValidatedNameAndReplayDoesNotReadTheAgendaAgain() {
+        var name = new com.prog2.appointment.reservation.domain.model.ProfessionalName("Ana", "Torres");
+        when(slots.verify(any())).thenReturn(name);
+        var created = start.start(42, request);
+        assertThat(repository.find(request.requestId()).orElseThrow().professionalName()).isEqualTo(name);
+        assertThat(created.process().professionalName()).isEqualTo(name);
+        assertThat(start.start(42, request).process().professionalName()).isEqualTo(name);
+        verify(slots, times(1)).verify(any());
+    }
+
+    @Test
+    void absentOptionalNameDoesNotPreventStarting() {
+        assertThat(start.start(42, request).process().professionalName()).isNull();
+        verify(holds, times(1)).create(any());
+    }
+
+    @Test
     void preservesIntentAndIdsBeforeEachPostAndReplaysWithoutEffects() {
         var created = start.start(42, request);
         assertThat(created.replayed()).isFalse();
@@ -407,7 +424,7 @@ class StartReservationTests {
     void aClosedRequestIsRecognizedEvenAfterItsAppointmentDate() {
         var candidate =
                 ReservationProcess.begin(
-                        request, new ReservationPatient(42, "Paciente", "Ficticio"));
+                        request, new ReservationPatient(42, "Paciente", "Ficticio"), null);
         repository.begin(candidate);
         repository.update(
                 candidate.id(),

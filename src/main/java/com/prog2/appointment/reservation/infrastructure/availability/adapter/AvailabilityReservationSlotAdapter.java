@@ -7,6 +7,7 @@ import com.prog2.appointment.availability.domain.ports.in.GetAvailabilityUseCase
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
 import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.model.ReservationSelection;
+import com.prog2.appointment.reservation.domain.model.ProfessionalName;
 import com.prog2.appointment.reservation.domain.ports.out.ReservableSlotGateway;
 
 /**
@@ -19,13 +20,14 @@ public final class AvailabilityReservationSlotAdapter implements ReservableSlotG
     private final GetAvailabilityUseCase availability;
 
     @Override
-    public void verify(ReservationSelection selection) {
+    public ProfessionalName verify(ReservationSelection selection) {
         try {
             var result = availability.get(selection.professionalId(), selection.date());
             if (!result.availableStartTimes().contains(selection.startTime())) {
                 throw new ReservationGatewayException(
                         ReservationFailure.SLOT_NOT_AVAILABLE, false, true);
             }
+            return ProfessionalName.from(result.firstName(), result.lastName());
         } catch (AvailabilityGatewayException _) {
             throw new ReservationGatewayException(
                     ReservationFailure.CATALOG_UNAVAILABLE, false, false);

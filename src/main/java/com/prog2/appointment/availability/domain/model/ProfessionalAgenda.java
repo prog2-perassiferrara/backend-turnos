@@ -6,7 +6,8 @@ import java.util.List;
 import java.util.TreeSet;
 
 /** Agenda obtenida para una consulta; no es una réplica persistida del catálogo. */
-public record ProfessionalAgenda(long professionalId, boolean enabled, List<WeeklySchedule> schedules) {
+public record ProfessionalAgenda(long professionalId, boolean enabled, List<WeeklySchedule> schedules,
+        String firstName, String lastName) {
     public ProfessionalAgenda {
         if (professionalId <= 0) {
             throw new IllegalArgumentException("Invalid professional identifier");

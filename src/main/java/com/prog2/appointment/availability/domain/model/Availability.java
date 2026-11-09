@@ -7,7 +7,7 @@ import java.util.List;
 
 /** Resultado inmutable de lectura; no concede exclusividad ni un hold al usuario. */
 public record Availability(long professionalId, LocalDate date, ZoneId timeZone,
-        List<LocalTime> availableStartTimes) {
+        List<LocalTime> availableStartTimes, String firstName, String lastName) {
     public Availability {
         availableStartTimes = List.copyOf(availableStartTimes);
     }

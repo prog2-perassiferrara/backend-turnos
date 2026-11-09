@@ -118,7 +118,7 @@ class ReservationRecoveryIntegrationTests {
 
     private ReservationProcess candidate(boolean withHold) {
         var process = ReservationProcess.begin(new StartReservationRequest(UUID.randomUUID(), ReservationProcessTests.SLOT),
-                new ReservationPatient(owner, "Paciente", "Ficticio"));
+                new ReservationPatient(owner, "Paciente", "Ficticio"), null);
         return withHold ? process.acceptHold(new HoldDetails("hold-" + process.id(), "central-" + process.id(),
                 NOW.plusSeconds(300))) : process;
     }
