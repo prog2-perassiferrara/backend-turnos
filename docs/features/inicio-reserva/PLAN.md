@@ -8,6 +8,7 @@
 
 
 **SPEC de referencia:** [SPEC.md aprobada](SPEC.md).
+**Ajuste autorizado:** RF-10 obtiene el nombre de la misma respuesta vigente usada por disponibilidad; el adaptador de reservas valida que ambas partes sean utilizables y el agregado lo conserva desde la inserción. No añade consultas, migraciones ni campos HTTP. Reconciliación no reemplaza el nombre ya guardado. Validar identidad, ausencia, inicio, transiciones e historial local.
 **Versión de la spec revisada:** aprobación explícita del 2026-10-29, nueve RF/diez CA; código base f0e452d.
 **Estado:** Aprobado <!-- Borrador | En revisión | Aprobado -->
 **Aprobación:** explícita del usuario el 2026-10-29. Autoriza derivar TASKS, no implementar.

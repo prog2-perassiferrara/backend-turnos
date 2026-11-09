@@ -39,7 +39,7 @@ public record ReservationProcess(
     }
 
     public static ReservationProcess begin(
-            StartReservationRequest request, ReservationPatient patient) {
+            StartReservationRequest request, ReservationPatient patient, ProfessionalName professionalName) {
         return new ReservationProcess(
                 request.requestId(),
                 patient,
@@ -51,7 +51,7 @@ public record ReservationProcess(
                 null,
                 UUID.randomUUID(),
                 null,
-                null,
+                professionalName,
                 null);
     }
 

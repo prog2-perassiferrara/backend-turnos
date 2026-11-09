@@ -83,6 +83,9 @@ Una corrección tras rechazo usa otro UUID; repetir un UUID exige el mismo conte
 Las operaciones sobre un proceso devuelven `processId`, `professionalId`, `date`,
 `startTime`, `state`, `expiresAt`, `reasonCode`, `phoneRequestId`, `requiredField`,
 `canSubmitPhone`, `warningCode`, nombres históricos opcionales y `cancellation`.
+Al iniciar una intención nueva, se conserva el nombre completo si está disponible
+en la misma lectura vigente de Catálogo utilizada para validar la disponibilidad.
+Si falta alguna parte, el nombre sigue siendo opcional; no se modifican reservas anteriores.
 Los campos no aplicables pueden ser null. `phoneRequestId` identifica el último envío
 local, no el evento central; solo `canSubmitPhone=true` habilita otro envío ahora.
 `cancellation` es null o un objeto con `status` (`PENDING`/`RETRY_REQUIRED`) y el booleano `canRetry`.

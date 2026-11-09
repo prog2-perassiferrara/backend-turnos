@@ -78,9 +78,9 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         if (patient.ownerId() != ownerId) {
             throw error(ReservationFailure.PROFILE_NOT_RESERVABLE, null);
         }
-        slots.verify(request.selection());
+        var professionalName = slots.verify(request.selection());
         messaging.requireReady();
-        var begin = repository.begin(ReservationProcess.begin(request, patient));
+        var begin = repository.begin(ReservationProcess.begin(request, patient, professionalName));
         var process = begin.process();
         if (!begin.created()) {
             if (!process.id().equals(request.requestId())) {

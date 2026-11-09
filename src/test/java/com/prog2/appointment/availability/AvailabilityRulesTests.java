@@ -47,16 +47,16 @@ class AvailabilityRulesTests {
     void preservesSecondsAndOrdersTheUnionWithoutDuplicateStarts() {
         var agenda = new ProfessionalAgenda(15, true, List.of(
                 schedule("09:30:15", "10:30:15", 30, true),
-                schedule("09:00:15", "10:00:15", 30, true)));
+                schedule("09:00:15", "10:00:15", 30, true)), null, null);
         assertThat(agenda.candidateStarts(MONDAY)).containsExactly(
                 LocalTime.of(9, 0, 15), LocalTime.of(9, 30, 15), LocalTime.of(10, 0, 15));
     }
 
     @Test
     void disabledProfessionalAndAnEmptyAgendaHaveNoCandidates() {
-        var disabled = new ProfessionalAgenda(15, false, List.of(schedule("09:00", "10:00", 30, true)));
+        var disabled = new ProfessionalAgenda(15, false, List.of(schedule("09:00", "10:00", 30, true)), null, null);
         assertThat(disabled.candidateStarts(MONDAY)).isEmpty();
-        assertThat(new ProfessionalAgenda(15, true, List.of()).candidateStarts(MONDAY)).isEmpty();
+        assertThat(new ProfessionalAgenda(15, true, List.of(), null, null).candidateStarts(MONDAY)).isEmpty();
     }
 
     @ParameterizedTest

@@ -40,6 +40,7 @@ criterios, decisiones del plan y tareas. -->
 
 - **RF-01:** Exigir usuario autenticado/autorizado y selección válida. Obtener propietario, paciente y nombres desde su cuenta; validar su compatibilidad antes del hold, sin aceptar sustituciones desde KMP.
 - **RF-02:** Validar profesional y horario completo habilitados mediante una lectura vigente de Catálogo. Excluir inicios pasados o actuales según CU-03, aunque antes figuraran disponibles.
+- **RF-10 · Nombre histórico:** al iniciar una intención nueva, conservar el nombre y apellido disponibles del profesional seleccionado; si falta alguna parte, mantener el nombre ausente sin impedir el inicio.
 - **RF-03:** Garantizar un único proceso pendiente por usuario, incluso con concurrencia, reinicio o cierre incierto, salvo el cierre local de un intento sin IDs permitido por la aclaración. Si existe, informar su referencia sin otro hold ni sustitución del historial.
 - **RF-04:** Conservar operación/propietario antes del hold y sus `holdId`, `reservationProcessId` y `expiresAt` antes de continuar. Una respuesta perdida/incompleta no demuestra ausencia del hold.
 - **RF-05:** Confirmar inicialmente el hold por REST de inmediato, con el mismo paciente y nombres de la cuenta, sin otra acción. No confundir aceptación inicial con reserva definitiva.
@@ -142,6 +143,7 @@ Repite el formato según sea necesario. -->
 - **CA-08 · RF-03, RF-07:** La competencia por el horario conserva propietarios independientes y respeta el conflicto central. Rechazar confirmación de un hold conocido no acredita cancelación ni libera el límite sin evidencia.
 - **CA-09 · RF-08:** Tras interrupción/reinicio se conservan selección, propietario, IDs conocidos y progreso/incertidumbre para CU-09; no se crea otra reserva por perder la memoria del proceso.
 - **CA-10 · RF-09:** Kafka conocido como indisponible impide nuevos holds; su caída posterior conserva progreso/plazo sin afirmar confirmación.
+- **CA-11 · RF-10:** el nombre completo disponible en la lectura vigente queda guardado al iniciar y se conserva en confirmación, cancelación y consulta local; un nombre incompleto no impide el inicio ni fabrica datos.
 
 ## Cómo se comprueba el comportamiento
 

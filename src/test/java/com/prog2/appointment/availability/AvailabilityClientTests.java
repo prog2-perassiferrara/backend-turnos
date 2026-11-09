@@ -64,6 +64,18 @@ class AvailabilityClientTests {
     }
 
     @Test
+    void readsTheNameOnlyFromTheValidatedProfessional() {
+        providers.agendaBody.set(AvailabilityTestSupport.agenda(15, true)
+                .replace("\"firstName\":\"Ficticio\"", "\"firstName\":\"Ana\",\"lastName\":\"Torres\""));
+        var agenda = catalog.find(15).orElseThrow();
+        assertThat(agenda.firstName()).isEqualTo("Ana");
+        assertThat(agenda.lastName()).isEqualTo("Torres");
+        assertThat(providers.agendaCalls).hasValue(1);
+        providers.agendaBody.set(AvailabilityTestSupport.agenda(16, true));
+        catalogFails(AvailabilityFailure.CATALOG_UNAVAILABLE);
+    }
+
+    @Test
     void readsBothTimeFormatsAndUsesExactlyTheDailyRangeAndExpectedCredentials() {
         var agenda = catalog.find(15).orElseThrow();
         assertThat(agenda.candidateStarts(AvailabilityTestSupport.DATE))

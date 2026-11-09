@@ -227,6 +227,38 @@ class ReservationIntegrationTests {
     }
 
     @Test
+    void historicalNameFromValidatedAgendaSurvivesEventsAndLocalHistory() throws Exception {
+        UUID id = UUID.randomUUID();
+        var created = start(id, "09:00");
+        assertThat(created.statusCode()).isEqualTo(202);
+        assertThat(body(created).path("professionalFirstName").asString()).isEqualTo("Ana");
+        assertThat(body(created).path("professionalLastName").asString()).isEqualTo("Torres");
+        var process = repository.find(id).orElseThrow();
+        assertThat(process.professionalName().firstName()).isEqualTo("Ana");
+        var hold = process.hold();
+        for (var type : List.of(
+                com.prog2.appointment.reservation.domain.enums.ReservationActionType.CONFIRMED,
+                com.prog2.appointment.reservation.domain.enums.ReservationActionType.CANCELLED)) {
+            var action = new com.prog2.appointment.reservation.domain.model.ReservationAction(
+                    type, new com.prog2.appointment.reservation.domain.model.ReservationAction.Correlation(
+                            UUID.randomUUID().toString(), hold.centralProcessId(), hold.holdId(), "request-1"),
+                    null, 8251L, process.selection());
+            repository.update(id, current -> current.apply(action, ReservationProcessTests.NOW));
+            assertThat(repository.find(id).orElseThrow().professionalName())
+                    .isEqualTo(new com.prog2.appointment.reservation.domain.model.ProfessionalName("Ana", "Torres"));
+        }
+        assertThat(repository.find(id).orElseThrow().phase()).isEqualTo(ReservationPhase.CANCELLED);
+        int queries = PROVIDERS.appointmentQueries.get();
+        var response = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/reservations"))
+                .header("Authorization", "Bearer " + token).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        var item = body(response).path("history").path("content").get(0);
+        assertThat(item.path("professionalFirstName").asString()).isEqualTo("Ana");
+        assertThat(item.path("professionalLastName").asString()).isEqualTo("Torres");
+        assertThat(PROVIDERS.appointmentQueries).hasValue(queries);
+    }
+
+    @Test
     void nanosecondExpirySurvivesMysqlInitialConfirmationAndTheKafkaPhoneRequest() throws Exception {
         var original = ReservationProcessTests.HOLD.expiresAt().plusNanos(987654321);
         PROVIDERS.holdExpiresAt.set(original);
@@ -447,13 +479,13 @@ class ReservationIntegrationTests {
         var request = new StartReservationRequest(UUID.randomUUID(), ReservationProcessTests.SLOT);
         var candidate =
                 ReservationProcess.begin(
-                        request, new ReservationPatient(owner, "Paciente", "Ficticio"));
+                        request, new ReservationPatient(owner, "Paciente", "Ficticio"), null);
         assertThat(repository.begin(candidate).created()).isTrue();
         assertThat(repository.begin(candidate).created()).isFalse();
         var another =
                 ReservationProcess.begin(
                         new StartReservationRequest(UUID.randomUUID(), request.selection()),
-                        candidate.patient());
+                        candidate.patient(), null);
         assertThat(repository.begin(another).process().id()).isEqualTo(candidate.id());
         repository.update(
                 candidate.id(),

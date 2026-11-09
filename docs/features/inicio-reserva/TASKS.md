@@ -8,6 +8,7 @@
 
 
 **Referencias:** [SPEC aprobada](SPEC.md) y [PLAN aprobado](PLAN.md), issue #9/CU-04.
+**Ajuste RF-10:** descripción opcional propagada desde la consulta vigente. `AvailabilityClientTests`, `AvailabilityReservationSlotAdapterTests`, `StartReservationTests` y `ReservationProcessTests` cubren identidad, nombre incompleto, inicio, replay y preservación ante reconciliación. `ReservationIntegrationTests.historicalNameFromValidatedAgendaSurvivesEventsAndLocalHistory` comprueba persistencia SQL, transiciones del agregado y consulta del historial sin reconciliación remota. `./mvnw verify`: 678 pruebas, sin fallos ni omisiones; proveedores ficticios y contenedores descartables, sin operaciones sobre servicios reales.
 **Estado:** Implementada y validada localmente; publicación y feedback remoto de esta revisión pendientes.
 **Aprobaciones:** SPEC, PLAN y TASKS aprobados explícitamente el 2026-10-29.
 **Autorización de implementación:** explícita del usuario el 2026-10-29 («apruebo tasks. implementa»).

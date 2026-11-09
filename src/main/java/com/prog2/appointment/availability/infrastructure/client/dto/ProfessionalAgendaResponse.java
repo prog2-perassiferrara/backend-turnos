@@ -8,9 +8,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProfessionalAgendaResponse(ProfessionalResponse professional,
         List<WeeklyScheduleResponse> weeklySchedules, CatalogResponse catalog) {
-    /** Identidad y habilitación; los datos descriptivos adicionales no se replican. */
+    /** Identidad, habilitación y descripción opcional de la misma lectura vigente. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ProfessionalResponse(Long id, Boolean enabled) { }
+    public record ProfessionalResponse(Long id, Boolean enabled, String firstName, String lastName) { }
 
     /** Horas externas sin conversión de zona; las valida el adaptador antes de crear el modelo. */
     @JsonIgnoreProperties(ignoreUnknown = true)

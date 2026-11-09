@@ -68,7 +68,7 @@ class GetAvailabilityUseCaseTests {
         var calls = new AtomicInteger();
         var useCase = new GetAvailabilityUseCaseImpl(_ -> {
             calls.incrementAndGet();
-            return Optional.of(new ProfessionalAgenda(15, true, List.of()));
+            return Optional.of(new ProfessionalAgenda(15, true, List.of(), null, null));
         }, (_, _) -> { throw new AssertionError("An empty agenda needs no occupancies"); },
                 Clock.fixed(afterUtcMidnight, ZoneOffset.UTC), ZONE);
         assertThat(useCase.get(15, DATE).availableStartTimes()).isEmpty();
@@ -116,7 +116,7 @@ class GetAvailabilityUseCaseTests {
     void aQueryAdmittedBeforeMidnightDoesNotReturnYesterdayAfterItsResponse() {
         var instant = new AtomicReference<>(Instant.parse("2026-11-03T02:57:00Z"));
         var late = new ProfessionalAgenda(15, true, List.of(new WeeklySchedule(DayOfWeek.MONDAY,
-                LocalTime.of(23, 58), LocalTime.of(23, 59, 59), 1, true)));
+                LocalTime.of(23, 58), LocalTime.of(23, 59, 59), 1, true)), null, null);
         var useCase = new GetAvailabilityUseCaseImpl(_ -> Optional.of(late), (_, _) -> {
             instant.set(Instant.parse("2026-11-03T03:00:00Z"));
             return List.of();
@@ -134,7 +134,7 @@ class GetAvailabilityUseCaseTests {
 
     private static ProfessionalAgenda agenda(boolean enabled) {
         return new ProfessionalAgenda(15, enabled, List.of(new WeeklySchedule(DayOfWeek.MONDAY,
-                LocalTime.of(9, 0), LocalTime.of(11, 0), 30, true)));
+                LocalTime.of(9, 0), LocalTime.of(11, 0), 30, true)), null, null);
     }
 
     private static GetAvailabilityUseCaseImpl withoutProviders() {
