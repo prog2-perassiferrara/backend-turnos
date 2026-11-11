@@ -56,7 +56,7 @@ class TechnicalAccessHttpTests {
 
     @Test
     void acquiresAccessThroughRealHttpAndKeepsItAfterCatalogFails() {
-        var access = new TechnicalAccessUseCaseImpl(catalog, central, clock, TestIntegrationSupport.GROUP);
+        var access = new TechnicalAccessUseCaseImpl(catalog, central, clock, TestIntegrationSupport.GROUP, Runnable::run);
         access.initialize();
         assertThat(access.getAccess().configuration().kafkaAppointmentActionsTopic()).isEqualTo("assigned-actions");
         assertThat(PROVIDERS.catalogCalls).hasValue(1);

@@ -5,9 +5,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,6 +44,8 @@ import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.prog2.appointment.integration.TestIntegrationSupport;
+import com.prog2.appointment.integration.TestIntegrationSupport.TestClock;
+import com.prog2.appointment.integration.application.exception.TechnicalAccessUnavailableException;
 import com.prog2.appointment.integration.domain.ports.in.TechnicalAccessUseCase;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -77,15 +77,18 @@ class AvailabilityHttpTests {
     private final JsonMapper json;
     private final JdbcTemplate jdbc;
     private final TechnicalAccessUseCase access;
+    private final TestClock clock;
     private final HttpClient http = HttpClient.newHttpClient();
     private String token;
 
     /** TestConstructor configura la entrega al constructor, sin Autowired ni inyección por campos. */
-    AvailabilityHttpTests(@LocalServerPort int port, JsonMapper json, JdbcTemplate jdbc, TechnicalAccessUseCase access) {
+    AvailabilityHttpTests(@LocalServerPort int port, JsonMapper json, JdbcTemplate jdbc,
+            TechnicalAccessUseCase access, TestClock clock) {
         this.port = port;
         this.json = json;
         this.jdbc = jdbc;
         this.access = access;
+        this.clock = clock;
     }
 
     @DynamicPropertySource
@@ -237,15 +240,25 @@ class AvailabilityHttpTests {
 
     @Test
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    void aRejectedTechnicalTokenRemainsUnavailableUntilRestartWithoutReplayingTheQuery() throws IOException, InterruptedException {
-        int tokenCalls = PROVIDERS.tokenCalls.get();
+    void central401PreservesTheHttpContractAndAvailabilityRecoversWithoutReplay() throws IOException, InterruptedException {
         PROVIDERS.occupancyStatus.set(401);
         problem(get(QUERY, token), 503, "TECHNICAL_INTEGRATION_UNAVAILABLE");
         assertThat(PROVIDERS.occupancyCalls).hasValue(1);
         PROVIDERS.occupancyStatus.set(200);
-        problem(get(QUERY, token), 503, "TECHNICAL_INTEGRATION_UNAVAILABLE");
-        assertThat(PROVIDERS.occupancyCalls).hasValue(1);
-        assertThat(PROVIDERS.tokenCalls).hasValue(tokenCalls);
+        PROVIDERS.rotateCentralToken();
+        try {
+            await().ignoreException(TechnicalAccessUnavailableException.class)
+                    .atMost(Duration.ofSeconds(8)).untilAsserted(() -> {
+                        clock.advance(Duration.ofSeconds(5));
+                        assertThat(access.getAccess().token().value()).isNotEqualTo(PROVIDERS.centralToken);
+                    });
+            assertThat(PROVIDERS.occupancyCalls).hasValue(1);
+            assertThat(get(QUERY, token).statusCode()).isEqualTo(200);
+            assertThat(PROVIDERS.occupancyCalls).hasValue(2);
+            assertThat(PROVIDERS.unexpectedCalls).hasValue(0);
+        } finally {
+            PROVIDERS.restoreCentralToken();
+        }
     }
 
     @Test
@@ -354,8 +367,8 @@ class AvailabilityHttpTests {
     static class TimeConfiguration {
         @Bean
         @Primary
-        Clock availabilityTestClock() {
-            return Clock.fixed(AvailabilityTestSupport.NOW, ZoneOffset.UTC);
+        TestClock availabilityTestClock() {
+            return new TestClock(AvailabilityTestSupport.NOW);
         }
     }
 }

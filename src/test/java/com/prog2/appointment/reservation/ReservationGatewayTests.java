@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.prog2.appointment.infrastructure.config.ReservationProperties;
+import com.prog2.appointment.integration.TestIntegrationSupport.TestClock;
+import com.prog2.appointment.integration.application.usecases.TechnicalAccessUseCaseImpl;
 import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
 import com.prog2.appointment.integration.domain.model.TechnicalAccess;
 import com.prog2.appointment.integration.domain.model.TechnicalToken;
@@ -34,6 +36,8 @@ import reactor.netty.http.client.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * HTTP real ficticio: se comprueban contrato, presupuesto y un solo intento, no respuestas mock del
@@ -146,6 +150,37 @@ class ReservationGatewayTests {
                 .isInstanceOf(ReservationGatewayException.class);
         verify(access).rejectAccess(providers.token);
         assertThat(providers.creates).hasValue(1);
+    }
+
+    @Test
+    void reacquiringAfterARejectedHoldPostDoesNotReplayIt() {
+        var offeredToken = new AtomicReference<>("old-fictional-token");
+        var configurationCalls = new AtomicInteger();
+        var configuration = new IntegrationConfiguration(ReservationTestSupport.GROUP, "fictional:9092",
+                "fictional-consumer", "fictional-actions", "fictional-phone");
+        var clock = new TestClock(ReservationProcessTests.NOW);
+        var session = new TechnicalAccessUseCaseImpl(
+                () -> new TechnicalToken(offeredToken.get(), null),
+                _ -> { configurationCalls.incrementAndGet(); return configuration; },
+                clock, ReservationTestSupport.GROUP, Runnable::run);
+        session.initialize();
+        access = session;
+        var holds = gateway(Duration.ofSeconds(2));
+
+        var rejected = assertThrows(ReservationGatewayException.class, () -> holds.create(process));
+        assertThat(rejected.failure()).isEqualTo(ReservationFailure.TECHNICAL_INTEGRATION_UNAVAILABLE);
+        assertThat(rejected.attempted()).isTrue();
+        clock.advance(Duration.ofSeconds(5));
+        assertThrows(IllegalStateException.class, session::getAccess);
+        assertThat(configurationCalls).hasValue(1);
+        offeredToken.set(providers.token);
+        clock.advance(Duration.ofSeconds(5));
+        assertThrows(IllegalStateException.class, session::getAccess);
+        assertThat(session.getAccess().token().value()).isEqualTo(providers.token);
+        assertThat(configurationCalls).hasValue(2);
+        assertThat(providers.credentialFailures).hasValue(1);
+        assertThat(providers.creates).hasValue(0);
+        assertThat(providers.confirmations).hasValue(0);
     }
 
     @Test

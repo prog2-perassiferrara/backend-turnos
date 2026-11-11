@@ -128,8 +128,8 @@ curl --fail --connect-timeout 2 --max-time 3 --retry 30 --retry-delay 2 --retry-
 Al aplicar por primera vez esta configuración de redes, `up` recrea los backends
 cuando detecta el cambio. `restart` por sí solo no aplica cambios de configuración.
 Si Catálogo aún no dispone de sesión y se agotan los intentos iniciales, Turnos
-permanece sin acceso técnico. Con Catálogo listo, repetir la adquisición reiniciando
-Turnos mediante `docker compose restart appointment`. No se readquiere por consultas.
+puede readquirir el acceso cuando vuelva a necesitarlo. Cuando Catálogo ofrezca un
+JWT utilizable, el siguiente intento habilita las operaciones técnicas sin reiniciar Turnos.
 
 Usar el puerto configurado en `APP_PORT` si se modificó. Con base accesible,
 health devuelve HTTP 200 y únicamente `{"status":"UP"}`. Es salud técnica:
@@ -243,8 +243,12 @@ permanecer desactivado para evitar duplicarlo con el scanner de CI.
 ## Límites operativos
 
 - Health `UP` es técnico, no acredita vigencia de Catálogo ni preparación Kafka.
-- Si se agotan los intentos iniciales de acceso técnico, o el JWT vence/se rechaza,
-  corregir la causa y reiniciar Turnos. No hay readquisición por consulta.
+- Tras un fallo transitorio, vencimiento o 401 central, una operación que necesita
+  acceso puede disparar un intento en segundo plano. Hay un intento a la vez y una
+  pausa mínima de 5 s entre ciclos. Una consulta durante la readquisición puede devolver
+  503 y luego realizarse nuevamente. Credenciales de servicio, permisos o configuración
+  inválidos requieren corregir la causa y reiniciar Turnos. Si Catálogo perdió su
+  sesión central, primero se debe recuperar allí siguiendo su procedimiento operativo.
 - La búsqueda central `find` recorre hasta tres páginas de 100. Devuelve coincidencias
   exactas en páginas válidas; no encontrar no demuestra inexistencia ni liberación.
 - Un commit JDBC incierto no se rescata como éxito inmediato: si era el checkpoint,

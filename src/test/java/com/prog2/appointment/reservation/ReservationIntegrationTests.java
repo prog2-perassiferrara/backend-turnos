@@ -2,15 +2,26 @@ package com.prog2.appointment.reservation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.prog2.appointment.infrastructure.config.ReservationProperties;
+import com.prog2.appointment.integration.TestIntegrationSupport.TestClock;
+import com.prog2.appointment.integration.application.usecases.TechnicalAccessUseCaseImpl;
+import com.prog2.appointment.integration.domain.enums.AccessFailure;
+import com.prog2.appointment.integration.domain.exception.IntegrationGatewayException;
+import com.prog2.appointment.integration.domain.model.IntegrationConfiguration;
+import com.prog2.appointment.integration.domain.model.TechnicalToken;
 import com.prog2.appointment.reservation.domain.enums.ReservationFailure;
+import com.prog2.appointment.reservation.domain.exception.ReservationGatewayException;
 import com.prog2.appointment.reservation.domain.enums.ReservationPhase;
 import com.prog2.appointment.reservation.domain.model.ReservationPatient;
 import com.prog2.appointment.reservation.domain.model.ReservationProcess;
 import com.prog2.appointment.reservation.domain.model.StartReservationRequest;
 import com.prog2.appointment.reservation.domain.ports.out.ReservationProcessRepository;
 import com.prog2.appointment.reservation.infrastructure.messaging.ReservationKafkaChannel;
+import com.prog2.appointment.reservation.infrastructure.messaging.ReservationActionParser;
+import com.prog2.appointment.reservation.infrastructure.scheduling.ReservationRecoveryDispatcher;
 import com.prog2.appointment.user.domain.ports.in.GetUserProfileUseCase;
 
 import org.apache.kafka.clients.admin.Admin;
@@ -35,6 +46,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -224,6 +236,41 @@ class ReservationIntegrationTests {
 
     private JsonNode body(HttpResponse<String> response) {
         return json.readTree(response.body());
+    }
+
+    @Test
+    void existingRecoveryDispatchPreparesKafkaWhenCatalogReturnsAfterStartup() {
+        var clock = new TestClock(ReservationProcessTests.NOW);
+        var offline = new AtomicBoolean(true);
+        var configuration = new IntegrationConfiguration(ReservationTestSupport.GROUP, KAFKA.getBootstrapServers(),
+                "technical-access-recovery", ReservationTestSupport.TOPIC, ReservationTestSupport.PHONE_TOPIC);
+        var access = new TechnicalAccessUseCaseImpl(() -> {
+            if (offline.get()) throw new IntegrationGatewayException(AccessFailure.TEMPORARY_UNAVAILABLE);
+            return new TechnicalToken("fictional-recovered-token", null);
+        }, _ -> configuration, clock, ReservationTestSupport.GROUP, Runnable::run);
+        access.initialize();
+        var settings = ReservationProperties.from(new MockEnvironment()
+                .withProperty("app.reservation.retry-delay", "25ms")
+                .withProperty("app.reservation.preparation-cooldown", "50ms"));
+        try (var recoveredChannel = new ReservationKafkaChannel(access, _ -> {},
+                new ReservationActionParser(json, ReservationTestSupport.GROUP), settings,
+                Executors.newSingleThreadExecutor())) {
+            var dispatcher = new ReservationRecoveryDispatcher(() -> {}, recoveredChannel);
+            dispatcher.applicationReady();
+            dispatcher.dispatch();
+            assertThatThrownBy(recoveredChannel::phoneDestination).isInstanceOf(ReservationGatewayException.class);
+
+            offline.set(false);
+            clock.advance(Duration.ofMinutes(10));
+            await().ignoreException(ReservationGatewayException.class)
+                    .atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                        dispatcher.dispatch();
+                        assertThat(recoveredChannel.phoneDestination().topic())
+                                .isEqualTo(ReservationTestSupport.PHONE_TOPIC);
+                    });
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(
+                    () -> assertThatCode(recoveredChannel::requireReady).doesNotThrowAnyException());
+        }
     }
 
     @Test

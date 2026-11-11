@@ -12,6 +12,10 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
@@ -31,6 +35,18 @@ import com.sun.net.httpserver.HttpServer;
 public final class TestIntegrationSupport implements AutoCloseable {
     public static final String GROUP = "appointment-test";
     public static final KeyPair KEYS = generateKeys(2048);
+
+    /** Reloj UTC de prueba que avanza sin esperas reales. */
+    public static final class TestClock extends Clock {
+        private final AtomicReference<Instant> now;
+
+        public TestClock(Instant initial) { now = new AtomicReference<>(initial); }
+        public void advance(Duration elapsed) { now.updateAndGet(instant -> instant.plus(elapsed)); }
+        @Override public Instant instant() { return now.get(); }
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return Clock.fixed(instant(), zone); }
+    }
+
     private final HttpServer catalog;
     private final HttpServer central;
     private final Path privatePath;
