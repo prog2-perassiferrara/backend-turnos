@@ -2,6 +2,9 @@ package com.prog2.appointment.integration.infrastructure.config;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
@@ -36,8 +39,14 @@ public class TechnicalIntegrationConfiguration {
 
     @Bean
     TechnicalAccessUseCaseImpl technicalAccessUseCase(CatalogTechnicalTokenGateway catalog,
-            CentralIntegrationGateway central, Clock clock, TechnicalAccessProperties properties) {
-        return new TechnicalAccessUseCaseImpl(catalog, central, clock, properties.expectedGroup());
+            CentralIntegrationGateway central, Clock clock, TechnicalAccessProperties properties,
+            @Qualifier("technicalAccessExecutor") ExecutorService executor) {
+        return new TechnicalAccessUseCaseImpl(catalog, central, clock, properties.expectedGroup(), executor);
+    }
+
+    @Bean(destroyMethod = "shutdownNow", defaultCandidate = false)
+    ExecutorService technicalAccessExecutor() {
+        return Executors.newSingleThreadExecutor(Thread.ofVirtual().name("technical-access").factory());
     }
 
     @Bean

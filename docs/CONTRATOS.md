@@ -133,7 +133,7 @@ La lectura de agenda debe ser `CURRENT`, copia disponible, versiones iguales no
 negativas y marcas coherentes, todo en la misma respuesta. Los datos descriptivos
 adicionales no forman una réplica en Turnos. La credencial de servicio se firma nueva
 por consulta. El acceso técnico central se adquiere al arranque, se conserva en memoria
-y no se readquiere por consultar; ver [ciclo de vida y limitaciones](ARQUITECTURA.md#recovery-cancelación-y-límites-operativos).
+y puede readquirirse bajo demanda; ver [ciclo de vida y limitaciones](ARQUITECTURA.md#recovery-cancelación-y-límites-operativos).
 
 ## REST y Kafka con cátedra
 

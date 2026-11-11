@@ -207,15 +207,18 @@ recuperación automática de reservas fuera de ese recorrido.
 
 Registro/login y GET/List propios funcionan sin proveedores remotos, con MySQL y
 configuración local válidos. Nuevas reservas exigen Catálogo vigente y Kafka preparado.
-Un acceso técnico ya adquirido puede usarse durante una caída de Catálogo. Si falla
-definitivamente su adquisición inicial, vence o recibe 401, **requiere reiniciar Turnos**;
-no hay renovación asíncrona. Health `UP` no garantiza disponibilidad funcional.
+Un acceso técnico ya adquirido puede usarse durante una caída de Catálogo.
+Health `UP` indica salud técnica. La adquisición inicial obtiene el JWT desde Catálogo
+y valida la configuración de cátedra, con hasta tres intentos ante fallos recuperables.
+Cada GET conserva sus límites de conexión, lectura y duración total (5 s, 5 s y 10 s por defecto).
 
-La adquisición inicial realiza hasta tres intentos consecutivos: obtiene el JWT
-desde Catálogo y valida la configuración de cátedra. Solo fallos recuperables permiten
-otro intento; no espera ni programa ciclos nuevos. Cada GET tiene 5 s de límite de
-conexión/lectura y 10 s totales. El acceso completo queda en memoria; leerlo comprueba
-vigencia sin HTTP, y un rechazo 401 invalida solo el token usado.
+Si falta acceso por un fallo transitorio, vencimiento o 401 central, `getAccess` puede
+disparar un único intento en segundo plano, con al menos 5 s entre ciclos. También puede
+hacerlo la preparación Kafka que solicita el recuperador existente. El solicitante recibe
+indisponibilidad mientras se adquiere el acceso, sin repetir su operación. Un 401 central
+invalida solo el JWT usado y se descarta ese mismo token si Catálogo vuelve a ofrecerlo.
+Los fallos permanentes de identidad, permisos o configuración detienen los intentos hasta
+reiniciar Turnos. Catálogo conserva su propia política de adquisición.
 
 Los [contratos](CONTRATOS.md) detallan credenciales y mensajes. Las pruebas con
 proveedores ficticios verifican comportamiento controlado; no sustituyen un ensayo

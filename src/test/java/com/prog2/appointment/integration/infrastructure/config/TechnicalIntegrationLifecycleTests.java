@@ -22,7 +22,7 @@ class TechnicalIntegrationLifecycleTests {
             execution.set(Thread.currentThread()); calls.incrementAndGet();
             return new TechnicalToken("fictional", null);
         }, _ -> new IntegrationConfiguration("appointment-test", "fictional:9092", "consumer", "actions", "phone"),
-                Clock.systemUTC(), "appointment-test");
+                Clock.systemUTC(), "appointment-test", Runnable::run);
         try (var context = new AnnotationConfigApplicationContext()) {
             context.addApplicationListener(new TechnicalIntegrationConfiguration().initializeTechnicalAccess(access));
             context.refresh();

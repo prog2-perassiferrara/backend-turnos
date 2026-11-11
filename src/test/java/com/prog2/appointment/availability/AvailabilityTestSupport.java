@@ -182,6 +182,10 @@ public final class AvailabilityTestSupport implements AutoCloseable {
         issuedToken.set(TestIntegrationSupport.token(NOW.plusSeconds(259200)));
     }
 
+    public void restoreCentralToken() {
+        issuedToken.set(centralToken);
+    }
+
     public static Map<String, String> query(HttpExchange exchange) {
         return java.util.Arrays.stream(exchange.getRequestURI().getRawQuery().split("&"))
                 .map(value -> value.split("=", 2))
