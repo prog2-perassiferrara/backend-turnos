@@ -193,6 +193,8 @@ public record ReservationProcess(
     }
 
     /**
+     * Una cancelación debe identificar la misma reserva si el proceso ya conoce su ID.
+     *
      * @return nuevo progreso únicamente si el hecho pertenece al proceso y no contradice un cierre
      */
     public ReservationProcess apply(ReservationAction action, Instant now) {
@@ -239,14 +241,18 @@ public record ReservationProcess(
                             action.reservationId(),
                             null,
                             now);
-            case CANCELLED ->
-                    change(
-                            ReservationPhase.CANCELLED,
-                            hold,
-                            correlation.requestEventId(),
-                            action.reservationId(),
-                            null,
-                            now);
+            case CANCELLED -> {
+                if (reservationId != null && !reservationId.equals(action.reservationId())) {
+                    yield this;
+                }
+                yield change(
+                        ReservationPhase.CANCELLED,
+                        hold,
+                        correlation.requestEventId(),
+                        action.reservationId(),
+                        null,
+                        now);
+            }
             case OTHER -> this;
         };
     }
