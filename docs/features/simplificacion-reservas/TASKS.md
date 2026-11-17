@@ -164,6 +164,8 @@ Implementada únicamente Etapa 4 autorizada, 2026-11-03. Etapas 1 a 3 conservada
 
 **Regresión local (2026-11-03, árbol de Etapa 4):** foco 81 correctas; después `./mvnw -B -ntp clean verify`, 643 correctas, cero fallos/errores/omisiones, BUILD SUCCESS. MySQL/Kafka temporales, sin .env ni servicios reales. src verificado idéntico byte a byte al árbol actual. Javadoc de ocho contratos/componentes sin avisos, git diff --check correcto. No se acredita un nuevo ensayo real de Catálogo/cátedra.
 
+**Corrección del 2026-11-17 (CA-11 y CA-13):** una cancelación Kafka con otro ID conserva la reserva confirmada. `ReservationProcessTests` cubre ID discrepante e ID coincidente. `./mvnw -B -ntp -o -Daether.syncContext.named.factory=noop clean verify` en copia aislada completó 682 pruebas sin fallos, errores ni omisiones.
+
 **Preservación:** producción de login/usuarios, technical access, disponibilidad, inbox mínimo, outbox, StartReservationUseCaseImpl, cliente de holds y guard intacta respecto al baseline. Recovery general solo adapta la delegación de cancelación para no anidar guard ni reclamar dos veces la fecha compartida. Modelo de proceso, persistencia y DTO cambian únicamente la intención de cancelación y su proyección.
 
 | Java productivo, líneas físicas | Antes | Después | Diferencia |

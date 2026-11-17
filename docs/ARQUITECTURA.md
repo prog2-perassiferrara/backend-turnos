@@ -43,7 +43,7 @@ flowchart TD
 | Paquete bajo `com.prog2.appointment` | Responsabilidad |
 | --- | --- |
 | `user` | Registro, contraseña, emisión de JWT y perfil mínimo para reservas. |
-| `integration` | Acceso técnico adquirido al arranque mediante Catálogo y configuración central. |
+| `integration` | Adquisición inicial y readquisición bajo demanda del acceso técnico mediante Catálogo y cátedra. |
 | `availability` | Combinar agenda vigente con ocupaciones centrales y reloj de atención. |
 | `reservation` | Inicio, teléfono, lectura propia, cancelación y recuperación. |
 | `infrastructure/config` y `infrastructure/security` raíz | Configuración compartida, claves, filtros y credencial de servicio. |
@@ -172,6 +172,7 @@ automática al salir de la pantalla.
   una solicitud Kafka adelantada a esa respuesta puede aplicarse sin diferirla.
   Un evento válido para proceso desconocido se ignora y deduplica definitivamente;
   no importa reservas ni conserva payload para replay. Mensajes inválidos no cambian estado.
+  Una cancelación con un ID distinto del ya registrado conserva la reserva.
 - El outbox guarda UUID del envío como `eventId`, contenido, destino lógico y plazo.
   Republicar conserva esos valores. El ACK solo registra publicación; el rechazo
   permite otra respuesta con UUID nuevo. Evento final y cierre de outbox son atómicos.

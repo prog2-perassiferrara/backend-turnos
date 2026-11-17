@@ -7,8 +7,9 @@ de cada registro; no se deben interpretar como estado actual de main o del worki
 
 La documentación vigente está en el [README de ejecución](../../README.md),
 [arquitectura y modelo](../ARQUITECTURA.md) y [contratos](../CONTRATOS.md).
-Las simplificaciones sustituyeron abandono, certificación por GET/List, recuperación
-técnica asíncrona, inbox con replay y ciclos versionados de cancelación.
+Las simplificaciones sustituyeron abandono, certificación por GET/List, inbox con
+replay y ciclos versionados de cancelación. El acceso técnico vigente incluye
+[readquisición bajo demanda](../ARQUITECTURA.md#recovery-cancelación-y-límites-operativos).
 
 | Antecedente | Documentos conservados |
 | --- | --- |

@@ -252,6 +252,20 @@ class ReservationProcessTests {
         assertThat(cancelled.apply(action(ReservationActionType.CONFIRMED, "late"), NOW)).isSameAs(cancelled);
     }
 
+    @Test
+    void cancellationForADifferentReservationIdPreservesTheConfirmedProcess() {
+        var confirmed = confirming().apply(action(ReservationActionType.CONFIRMED, "confirmed"), NOW);
+        var cancellation = new ReservationAction(
+                ReservationActionType.CANCELLED,
+                new ReservationAction.Correlation(
+                        "different-reservation", HOLD.centralProcessId(), HOLD.holdId(), "request-1"),
+                null,
+                9999L,
+                SLOT);
+
+        assertThat(confirmed.apply(cancellation, NOW)).isEqualTo(confirmed);
+    }
+
     @ParameterizedTest
     @EnumSource(
             value = ReservationActionType.class,
