@@ -1,5 +1,6 @@
 package com.prog2.appointment.infrastructure.security.jwt;
 
+import lombok.RequiredArgsConstructor;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,17 +14,14 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * Comprueba el contrato de usuario después de verificar firma, emisor, audiencia y vigencia.
  * Valida datos externos en la frontera de seguridad; no consulta cuentas ni decide propiedad.
  */
+@RequiredArgsConstructor
 public final class JwtContractValidator implements OAuth2TokenValidator<Jwt> {
     private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
     private static final Pattern AUTHORITIES = Pattern.compile("ROLE_[A-Z0-9_]++(?: ROLE_[A-Z0-9_]++)*+");
     private static final OAuth2TokenValidatorResult INVALID = OAuth2TokenValidatorResult.failure(
             new OAuth2Error("invalid_token", "JWT does not satisfy the agreed contract", null));
+    /** Reloj UTC para comprobar emisión futura, sustituible en pruebas */
     private final Clock clock;
-
-    /** @param clock reloj UTC para comprobar emisión futura, sustituible en pruebas */
-    public JwtContractValidator(Clock clock) {
-        this.clock = clock;
-    }
 
     /**
      * Exige sujeto de cuenta, perfil user, autoridades y tiempos coherentes.

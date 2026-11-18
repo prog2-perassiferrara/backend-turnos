@@ -1,5 +1,7 @@
 package com.prog2.appointment.user.infrastructure.persistence.entity;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.Getter;
 import java.time.Instant;
 import java.util.HashSet;
@@ -18,6 +20,7 @@ import com.prog2.appointment.user.domain.model.RegistrationData;
 /** Cuenta local persistida; no se enlaza directamente con JSON ni sale de infraestructura. */
 @Entity
 @Table(name = "app_user")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserAccountEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,10 +60,6 @@ public class UserAccountEntity {
     @CollectionTable(name = "user_authority", joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "authority", nullable = false, length = 50)
     private Set<String> authorities = new HashSet<>();
-
-    protected UserAccountEntity() {
-        // Constructor requerido por JPA; el alta de aplicación usa el constructor completo.
-    }
 
     /**
      * Materializa el contrato createActiveUser: identidad, activación, autoridad y auditoría propios.
