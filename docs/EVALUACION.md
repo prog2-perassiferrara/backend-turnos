@@ -9,9 +9,9 @@
 
 | Aspecto | Resultado |
 |---|---|
-| Índice de calidad | **64/100** |
+| Índice de calidad | **77/100** |
 | Tipo de repositorio | `backend` |
-| Build (`mvnw verify` / `gradlew check`) | no compila |
+| Build (`mvnw verify` / `gradlew check`) | OK |
 | Código (LOC) | 17,986 |
 | Archivos de código | 217 |
 | Clases | 260 |
@@ -31,12 +31,12 @@ Criterios de la cátedra (`CRITERIOS-CALIDAD.md`): **Aprobar** se juega con el p
 
 | Semáforo | Resultado |
 |---|---|
-| Aprobar (`estandar`) | **no cumple** — 6/11 |
-| Destacar (`exigente`) | **no cumple** — 4/11 |
+| Aprobar (`estandar`) | **no cumple** — 7/11 |
+| Destacar (`exigente`) | **no cumple** — 5/11 |
 
-**Para aprobar, falta cumplir:** SOLID; Tests
+**Para aprobar, falta cumplir:** SOLID
 
-**Para destacar, falta cumplir:** SOLID; POO; Duplicación; Tests
+**Para destacar, falta cumplir:** SOLID; POO; Duplicación
 
 ## 3. Autoría (RepoSense)
 
@@ -57,7 +57,7 @@ Cada dimensión indica **qué mide**, **por qué importa** y **tu resultado**. C
 | **D3** Frontend KMP: MVVM y buenas prácticas (10%) | 10% | N/A |
 | **D4** Integración y contrato (10%) | 10% | 90 |
 | **D5** Seguridad y robustez (10%) | 10% | 100 |
-| **D6** Pruebas y cobertura (20%) | 20% | 40 |
+| **D6** Pruebas y cobertura (20%) | 20% | 100 |
 | **D7** Proceso y entrega (15%) | 15% | 100 |
 
 ### D1. Diseño OO, SOLID y patrones (20%)
@@ -92,11 +92,7 @@ Cada dimensión indica **qué mide**, **por qué importa** y **tu resultado**. C
 
 - **Qué mide:** Cantidad y resultado de pruebas y cobertura de línea (JaCoCo/Kover, Surefire/Failsafe) cuando hay build.
 - **Por qué importa:** Las pruebas son la red de seguridad para refactorizar e integrar; la cobertura acota las zonas sin verificar.
-- **Tu resultado:** **40/100**
-- **Para investigar la causa:**
-    - ¿Qué partes del sistema no tienen pruebas?
-    - ¿Las pruebas cubren caminos de error o solo el caso feliz?
-    - ¿Qué falla al ejecutar la suite completa (no solo la del módulo propio)?
+- **Tu resultado:** **100/100**
 
 ### D7. Proceso y entrega (15%)
 
