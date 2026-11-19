@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.entity;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.Getter;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,6 +18,7 @@ import jakarta.persistence.Version;
 /** Estado JPA propio, sin relaciones navegables hacia user ni serialización HTTP. */
 @Entity
 @Table(name = "reservation_process")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ReservationProcessEntity {
     @Id
     @Column(name = "id", length = 36)
@@ -109,8 +112,6 @@ public class ReservationProcessEntity {
 
     @Column(name = "recovery_next_attempt_at")
     private Instant recoveryNextAttemptAt;
-
-    protected ReservationProcessEntity() {}
 
     public ReservationProcessEntity(ReservationProcess process, Instant now) {
         id = process.id().toString();

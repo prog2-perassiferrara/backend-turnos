@@ -11,7 +11,10 @@ import com.prog2.appointment.user.domain.ports.out.PasswordHasher;
 import com.prog2.appointment.user.domain.ports.out.UserAccountRepository;
 import com.prog2.appointment.user.domain.ports.out.UserTokenIssuer;
 
-/** Verifica cuenta y contraseña antes de emitir una credencial de usuario; no modifica el perfil. */
+/**
+ * Verifica cuenta y contraseña antes de emitir una credencial de usuario; no
+ * modifica el perfil.
+ */
 @Component
 @RequiredArgsConstructor
 public final class AuthenticateUserUseCaseImpl implements AuthenticateUserUseCase {

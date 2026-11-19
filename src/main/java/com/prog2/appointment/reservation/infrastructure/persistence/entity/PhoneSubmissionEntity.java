@@ -1,5 +1,7 @@
 package com.prog2.appointment.reservation.infrastructure.persistence.entity;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.Getter;
 import com.prog2.appointment.reservation.domain.model.PhoneSubmission;
 
@@ -14,6 +16,7 @@ import java.time.Instant;
 /** Outbox e historial propios; el teléfono no tiene representación de texto ni exposición web. */
 @Entity
 @Table(name = "reservation_phone_submission")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PhoneSubmissionEntity {
     @Id
     @Column(name = "id", length = 36)
@@ -75,8 +78,6 @@ public class PhoneSubmissionEntity {
     @Version
     @Column(name = "version")
     private Long version;
-
-    protected PhoneSubmissionEntity() {}
 
     public PhoneSubmissionEntity(PhoneSubmission phone) {
         id = phone.id().toString();
