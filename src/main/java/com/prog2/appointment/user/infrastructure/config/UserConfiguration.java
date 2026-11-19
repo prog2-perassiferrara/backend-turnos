@@ -13,7 +13,10 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import com.prog2.appointment.infrastructure.config.TechnicalAccessProperties;
 
-/** Configura el hash de contraseñas y la firma de tokens; los casos de uso se descubren por Spring. */
+/**
+ * Configura el hash de contraseñas y la firma de tokens con la clave privada compartida.
+ * Spring descubre los casos de uso e inyecta sus dependencias sin acoplarlos a infraestructura.
+ */
 @Configuration(proxyBeanMethods = false)
 public class UserConfiguration {
     @Bean

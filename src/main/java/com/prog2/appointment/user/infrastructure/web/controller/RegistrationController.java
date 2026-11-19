@@ -19,29 +19,30 @@ import com.prog2.appointment.user.domain.ports.in.RegisterUserUseCase;
 import com.prog2.appointment.user.infrastructure.web.dto.RegistrationRequest;
 import com.prog2.appointment.user.infrastructure.web.mapper.RegistrationDtoMapper;
 
-/** Adaptador HTTP público de CU-01; el 201 confirma el alta antes del login automático del cliente. */
+/**
+ * Adaptador HTTP público de CU-01; el 201 confirma el alta antes del login
+ * automático del cliente.
+ */
 @RestController
 @RequiredArgsConstructor
 public final class RegistrationController {
-    private final RegisterUserUseCase registration;
-    private final RegistrationDtoMapper mapper;
+        private final RegisterUserUseCase registration;
+        private final RegistrationDtoMapper mapper;
 
-    /** @return 201 sin cuerpo ni JWT; KMP ejecuta luego authenticate sin otra acción de la persona */
-    @Operation(summary = "Registrar usuario", description = "Alta pública compatible con JHipster. Crea la cuenta activa sin emitir JWT.", tags = {"Cuenta"})
-    @SecurityRequirements
-    @ApiResponse(responseCode = "201", description = "Usuario creado.")
-    @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR o USER_IDENTIFIER_ALREADY_USED",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "503", description = "USER_REGISTRATION_UNAVAILABLE",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "500", description = "INTERNAL_ERROR",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @PostMapping("/api/register")
-    public ResponseEntity<Void> register(@Valid @RequestBody RegistrationRequest request) {
-        registration.register(mapper.toDomain(request), request.password());
-        return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).build();
-    }
+        /**
+         * @return 201 sin cuerpo ni JWT; KMP ejecuta luego authenticate sin otra acción
+         *         de la persona
+         */
+        @Operation(summary = "Registrar usuario", description = "Alta pública compatible con JHipster. Crea la cuenta activa sin emitir JWT.", tags = {
+                        "Cuenta" })
+        @SecurityRequirements
+        @ApiResponse(responseCode = "201", description = "Usuario creado.")
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR o USER_IDENTIFIER_ALREADY_USED", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @ApiResponse(responseCode = "503", description = "USER_REGISTRATION_UNAVAILABLE", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @ApiResponse(responseCode = "500", description = "INTERNAL_ERROR", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @PostMapping("/api/register")
+        public ResponseEntity<Void> register(@Valid @RequestBody RegistrationRequest request) {
+                registration.register(mapper.toDomain(request), request.password());
+                return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).build();
+        }
 }

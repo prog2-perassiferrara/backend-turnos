@@ -28,7 +28,8 @@ import com.prog2.appointment.reservation.infrastructure.persistence.service.Tran
 
 /**
  * Adapter de persistencia: solo un retorno normal del proxy permite continuar.
- * Los errores de commit se propagan; recovery relee el estado sin atribuir autoría del commit.
+ * Los errores de commit se propagan; recovery relee el estado sin atribuir
+ * autoría del commit.
  */
 @Component
 @RequiredArgsConstructor
@@ -63,11 +64,14 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
         try {
             return new BeginResult(store.create(candidate), true);
         } catch (DataAccessException | TransactionException failure) {
-            if (!duplicate(failure)) throw new ReservationStorageException();
-            // Un conflicto único nunca otorga permiso de creación, aunque exista la misma fila.
+            if (!duplicate(failure))
+                throw new ReservationStorageException();
+            // Un conflicto único nunca otorga permiso de creación, aunque exista la misma
+            // fila.
             var same = find(candidate.id());
             if (same.isPresent()) {
-                if (same.get().ownerId() != candidate.ownerId()) throw new ReservationConflictException();
+                if (same.get().ownerId() != candidate.ownerId())
+                    throw new ReservationConflictException();
                 return new BeginResult(same.get(), false);
             }
             return new BeginResult(findPending(candidate.ownerId())
@@ -82,10 +86,13 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
 
     @Override
     public void accept(ReservationAction action) {
-        // Incluso ante un commit incierto se propaga el fallo; redelivery verificará el eventId.
-        write(() -> { store.accept(action); return null; });
+        // Incluso ante un commit incierto se propaga el fallo; redelivery verificará el
+        // eventId.
+        write(() -> {
+            store.accept(action);
+            return null;
+        });
     }
-
 
     @Override
     public Optional<ReservationProcess> beginInitialConfirmation(UUID id, Instant now) {
@@ -104,7 +111,10 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
 
     @Override
     public void deferRecovery(UUID id, Instant nextAttempt) {
-        write(() -> { store.deferRecovery(id, nextAttempt); return null; });
+        write(() -> {
+            store.deferRecovery(id, nextAttempt);
+            return null;
+        });
     }
 
     @Override
@@ -121,9 +131,12 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
             } catch (OptimisticLockingFailureException _) {
                 // No hubo commit: repetir solo la aceptación local sobre datos actuales.
             } catch (DataAccessException | TransactionException failure) {
-                if (!duplicate(failure)) throw new ReservationStorageException();
-                // Solo un conflicto único conocido permite repetir la validación local, nunca un
-                // commit incierto. El UUID de la respuesta sigue siendo la clave de idempotencia.
+                if (!duplicate(failure))
+                    throw new ReservationStorageException();
+                // Solo un conflicto único conocido permite repetir la validación local, nunca
+                // un
+                // commit incierto. El UUID de la respuesta sigue siendo la clave de
+                // idempotencia.
             }
         }
         throw new ReservationStorageException();
@@ -177,7 +190,10 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
     @Override
     public void finishCancellationAttempt(UUID id, UUID writeId, boolean requireRetry, String failure,
             Instant now, Instant nextReview) {
-        write(() -> { store.finishCancellationAttempt(id, writeId, requireRetry, failure, now, nextReview); return null; });
+        write(() -> {
+            store.finishCancellationAttempt(id, writeId, requireRetry, failure, now, nextReview);
+            return null;
+        });
     }
 
     @Override
@@ -209,7 +225,8 @@ public final class JpaReservationProcessAdapter implements ReservationProcessRep
 
     private static boolean duplicate(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            // Comprobación de tipo únicamente en la frontera SQL; nunca decidir por mensajes del
+            // Comprobación de tipo únicamente en la frontera SQL; nunca decidir por
+            // mensajes del
             // proveedor.
             if (cause instanceof SQLException sql && sql.getErrorCode() == 1062) {
                 return true;

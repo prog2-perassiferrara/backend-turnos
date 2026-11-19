@@ -19,34 +19,33 @@ import com.prog2.appointment.user.domain.ports.in.AuthenticateUserUseCase;
 import com.prog2.appointment.user.infrastructure.web.dto.AuthenticationRequest;
 import com.prog2.appointment.user.infrastructure.web.dto.AuthenticationResponse;
 
-/** Adaptador HTTP público de CU-02, reutilizado por el login automático y el independiente. */
+/**
+ * Adaptador HTTP público de CU-02, reutilizado por el login automático y el
+ * independiente.
+ */
 @RestController
 @RequiredArgsConstructor
 public final class AuthenticationController {
-    private final AuthenticateUserUseCase authentication;
+        private final AuthenticateUserUseCase authentication;
 
-    /** @return id_token y cabecera bearer de la misma cuenta autenticada; sin cookie ni sesión HTTP */
-    @Operation(summary = "Autenticar usuario", description = "Entrega el JWT propio de usuario y la cabecera bearer. Los errores de credenciales no revelan la causa.", tags = {"Cuenta"})
-    @SecurityRequirements
-    @ApiResponse(responseCode = "200", description = "Autenticación exitosa.", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "401", description = "INVALID_CREDENTIALS",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "503", description = "AUTHENTICATION_UNAVAILABLE",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @ApiResponse(responseCode = "500", description = "INTERNAL_ERROR",
-            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                    schema = @Schema(ref = PROBLEM_SCHEMA)))
-    @PostMapping("/api/authenticate")
-    public ResponseEntity<AuthenticationResponse> authenticate(
-            @Valid @RequestBody AuthenticationRequest request) {
-        var token = authentication.authenticate(request.username(), request.password(), request.rememberMe());
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token.value())
-                .body(new AuthenticationResponse(token.value()));
-    }
+        /**
+         * @return id_token y cabecera bearer de la misma cuenta autenticada; sin cookie
+         *         ni sesión HTTP
+         */
+        @Operation(summary = "Autenticar usuario", description = "Entrega el JWT propio de usuario y la cabecera bearer. Los errores de credenciales no revelan la causa.", tags = {
+                        "Cuenta" })
+        @SecurityRequirements
+        @ApiResponse(responseCode = "200", description = "Autenticación exitosa.", useReturnTypeSchema = true)
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @ApiResponse(responseCode = "401", description = "INVALID_CREDENTIALS", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @ApiResponse(responseCode = "503", description = "AUTHENTICATION_UNAVAILABLE", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @ApiResponse(responseCode = "500", description = "INTERNAL_ERROR", content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(ref = PROBLEM_SCHEMA)))
+        @PostMapping("/api/authenticate")
+        public ResponseEntity<AuthenticationResponse> authenticate(
+                        @Valid @RequestBody AuthenticationRequest request) {
+                var token = authentication.authenticate(request.username(), request.password(), request.rememberMe());
+                return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token.value())
+                                .body(new AuthenticationResponse(token.value()));
+        }
 }

@@ -78,10 +78,17 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
         if (patient.ownerId() != ownerId) {
             throw error(ReservationFailure.PROFILE_NOT_RESERVABLE, null);
         }
+
+
         var professionalName = slots.verify(request.selection());
+
         messaging.requireReady();
+
+
         var begin = repository.begin(ReservationProcess.begin(request, patient, professionalName));
         var process = begin.process();
+
+
         if (!begin.created()) {
             if (!process.id().equals(request.requestId())) {
                 throw error(ReservationFailure.ACTIVE_RESERVATION_PROCESS, process);
@@ -133,14 +140,24 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
                 throw new ReservationGatewayException(
                         ReservationFailure.INVALID_RESERVATION_SELECTION, false, true);
             }
+
+
             process = createHold(process);
+
+
             if (process.phase() != ReservationPhase.HELD) {
                 return process;
             }
             var now = clock.instant();
+            
+            
             if (!now.isBefore(process.hold().expiresAt()))
                 return repository.update(process.id(), value -> value.expireUnconfirmedHold(now));
+
+
             var claimed = repository.beginInitialConfirmation(process.id(), now);
+
+            
             if (claimed.isEmpty()) return current(process.id());
             process = claimed.orElseThrow();
             var beforeTransport = clock.instant();
@@ -149,9 +166,15 @@ public final class StartReservationUseCaseImpl implements StartReservationUseCas
                 return repository.update(process.id(),
                         value -> value.expireUnsentConfirmation(ownClaim, beforeTransport));
             }
+
+
             var accepted = holds.confirm(process);
+
+
             return repository.update(
                     process.id(), value -> value.acceptInitialConfirmation(accepted));
+
+                    
         } catch (ReservationGatewayException failure) {
             var current =
                     repository.update(
