@@ -3,7 +3,7 @@
 
 > Documento **generado automáticamente** por la cátedra de Programación II (UM): RepoSense + análisis de calidad de **7 dimensiones**. **No editar a mano**: se regenera en cada evaluación.
 > Rama evaluada: `main`. Análisis **heurístico** (regex + métricas) + build: es una criba para orientar la revisión, **no una nota**. La **documentación** del repositorio no se evalúa.
-> Generado: 2026-11-18.
+> Generado: 2026-11-20.
 
 ## 1. Veredicto
 
@@ -12,14 +12,14 @@
 | Índice de calidad | **77/100** |
 | Tipo de repositorio | `backend` |
 | Build (`mvnw verify` / `gradlew check`) | OK |
-| Código (LOC) | 17,986 |
+| Código (LOC) | 18,001 |
 | Archivos de código | 217 |
 | Clases | 260 |
 | Código dentro de clases (%POO) | 78% |
 | Funciones fuera de clases | 0 |
 | Duplicación (puerta) | 2.7% |
 | Duplicación lógica | 2.8% |
-| Duplicación de boilerplate | 2.5% |
+| Duplicación de boilerplate | 3.1% |
 | Cobertura | 95% |
 | Tope duro aplicado a D1 | `POO_BAJO` → D1 ≤ 60 |
 
@@ -42,7 +42,7 @@ Criterios de la cátedra (`CRITERIOS-CALIDAD.md`): **Aprobar** se juega con el p
 
 | Autor | Commits | Código (LOC) | Tests (LOC) | Docs (LOC) | Días activos | % del código |
 |---|---:|---:|---:|---:|---:|---:|
-| Valentino Perassi Ferrara | 47 | 7,927 | 11,512 | 7,856 | 20 | 100% |
+| Valentino Perassi Ferrara | 49 | 7,961 | 11,512 | 7,856 | 22 | 100% |
 
 > _El LOC de autoría lo calcula RepoSense sobre el historial y puede diferir del LOC de código del análisis (que mira el estado de `main`)._
 
@@ -119,7 +119,7 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 | `src/main/java/com/prog2/appointment/reservation/application/usecases/RecoverReservationCancellationsUseCaseImpl.java` | 7 |
 | `src/main/java/com/prog2/appointment/reservation/infrastructure/client/adapter/WebClientCentralAppointmentAdapter.java` | 6 |
 
-**DIP/concretos** (107)
+**DIP/concretos** (106)
 - clase 'GetAvailabilityUseCaseImpl' muy acoplada (CBO=13) — `src/main/java/com/prog2/appointment/availability/application/usecases/GetAvailabilityUseCaseImpl.java:19`
 - clase 'GetAvailabilityUseCaseImpl' instancia 5 concretos (CBO=13) — `src/main/java/com/prog2/appointment/availability/application/usecases/GetAvailabilityUseCaseImpl.java:19`
 - clase 'AvailabilityFailure' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/availability/domain/enums/AvailabilityFailure.java:4`
@@ -145,12 +145,12 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 - clase 'JwtSecurityProperties' instancia 3 concretos (CBO=16) — `src/main/java/com/prog2/appointment/infrastructure/security/config/JwtSecurityProperties.java:20`
 - clase 'SecurityConfiguration' muy acoplada (CBO=44) — `src/main/java/com/prog2/appointment/infrastructure/security/config/SecurityConfiguration.java:37`
 - clase 'SecurityConfiguration' instancia 9 concretos (CBO=44) — `src/main/java/com/prog2/appointment/infrastructure/security/config/SecurityConfiguration.java:37`
-- clase 'JwtContractValidator' muy acoplada (CBO=16) — `src/main/java/com/prog2/appointment/infrastructure/security/jwt/JwtContractValidator.java:16`
+- clase 'JwtContractValidator' muy acoplada (CBO=17) — `src/main/java/com/prog2/appointment/infrastructure/security/jwt/JwtContractValidator.java:18`
 - clase 'ServiceTokenIssuer' muy acoplada (CBO=21) — `src/main/java/com/prog2/appointment/infrastructure/security/jwt/ServiceTokenIssuer.java:18`
 - clase 'SecurityProblemHandler' muy acoplada (CBO=27) — `src/main/java/com/prog2/appointment/infrastructure/security/web/SecurityProblemHandler.java:22`
 - clase 'TechnicalAccessUseCaseImpl' muy acoplada (CBO=30) — `src/main/java/com/prog2/appointment/integration/application/usecases/TechnicalAccessUseCaseImpl.java:21`
 - clase 'TechnicalAccessUseCaseImpl' instancia 7 concretos (CBO=30) — `src/main/java/com/prog2/appointment/integration/application/usecases/TechnicalAccessUseCaseImpl.java:21`
-- clase 'AccessFailure' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/integration/domain/enums/AccessFailure.java:4`
+- clase 'AccessFailure' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/integration/domain/enums/AccessFailure.java:7`
 - clase 'SafeIntegrationHttpClient' muy acoplada (CBO=28) — `src/main/java/com/prog2/appointment/integration/infrastructure/client/adapter/SafeIntegrationHttpClient.java:18`
 - clase 'SafeIntegrationHttpClient' instancia 7 concretos (CBO=28) — `src/main/java/com/prog2/appointment/integration/infrastructure/client/adapter/SafeIntegrationHttpClient.java:18`
 - clase 'WebClientCatalogTechnicalTokenAdapter' muy acoplada (CBO=13) — `src/main/java/com/prog2/appointment/integration/infrastructure/client/adapter/WebClientCatalogTechnicalTokenAdapter.java:15`
@@ -196,39 +196,38 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 - clase 'ReservationActionParser' instancia 7 concretos (CBO=25) — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/ReservationActionParser.java:17`
 - clase 'ReservationKafkaChannel' muy acoplada (CBO=45) — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/ReservationKafkaChannel.java:32`
 - clase 'ReservationKafkaChannel' instancia 7 concretos (CBO=45) — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/ReservationKafkaChannel.java:32`
-- clase 'JpaReservationProcessAdapter' muy acoplada (CBO=32) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:35`
-- clase 'JpaReservationProcessAdapter' instancia 13 concretos (CBO=32) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:35`
-- clase 'ReservationProcessEntity' muy acoplada (CBO=12) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/entity/ReservationProcessEntity.java:19`
+- clase 'JpaReservationProcessAdapter' muy acoplada (CBO=32) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:36`
+- clase 'JpaReservationProcessAdapter' instancia 13 concretos (CBO=32) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:36`
+- clase 'ReservationProcessEntity' muy acoplada (CBO=12) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/entity/ReservationProcessEntity.java:22`
 - clase 'ReservationPersistenceMapper' muy acoplada (CBO=12) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/mapper/ReservationPersistenceMapper.java:19`
 - clase 'ReservationPersistenceMapper' instancia 5 concretos (CBO=12) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/mapper/ReservationPersistenceMapper.java:19`
 - clase 'JpaPhoneSubmissionRepository' muy acoplada (CBO=11) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/repository/JpaPhoneSubmissionRepository.java:15`
 - clase 'JpaReservationProcessRepository' muy acoplada (CBO=19) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/repository/JpaReservationProcessRepository.java:15`
-- clase 'TransactionalReservationStore' muy acoplada (CBO=58) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:41`
-- clase 'TransactionalReservationStore' instancia 12 concretos (CBO=58) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:41`
+- clase 'TransactionalReservationStore' muy acoplada (CBO=58) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:42`
+- clase 'TransactionalReservationStore' instancia 12 concretos (CBO=58) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:42`
 - clase 'ReservationRecoveryDispatcher' muy acoplada (CBO=9) — `src/main/java/com/prog2/appointment/reservation/infrastructure/scheduling/ReservationRecoveryDispatcher.java:15`
 - clase 'UserReservationPatientAdapter' muy acoplada (CBO=9) — `src/main/java/com/prog2/appointment/reservation/infrastructure/user/adapter/UserReservationPatientAdapter.java:18`
 - clase 'UserReservationPatientAdapter' instancia 4 concretos (CBO=9) — `src/main/java/com/prog2/appointment/reservation/infrastructure/user/adapter/UserReservationPatientAdapter.java:18`
 - clase 'ReservationProblemHandler' muy acoplada (CBO=40) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/ReservationProblemHandler.java:24`
-- clase 'ReservationController' muy acoplada (CBO=72) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/controller/ReservationController.java:45`
+- clase 'ReservationController' muy acoplada (CBO=72) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/controller/ReservationController.java:48`
 - clase 'ReservationProcessResponse' muy acoplada (CBO=11) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/dto/ReservationProcessResponse.java:12`
 - clase 'ReservationDtoMapper' muy acoplada (CBO=18) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/mapper/ReservationDtoMapper.java:20`
 - clase 'ReservationDtoMapper' instancia 6 concretos (CBO=18) — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/mapper/ReservationDtoMapper.java:20`
-- clase 'AuthenticateUserUseCaseImpl' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/user/application/usecases/AuthenticateUserUseCaseImpl.java:17`
+- clase 'AuthenticateUserUseCaseImpl' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/user/application/usecases/AuthenticateUserUseCaseImpl.java:20`
 - clase 'UserAccountRepository' muy acoplada (CBO=8) — `src/main/java/com/prog2/appointment/user/domain/ports/out/UserAccountRepository.java:9`
-- clase 'UserConfiguration' muy acoplada (CBO=17) — `src/main/java/com/prog2/appointment/user/infrastructure/config/UserConfiguration.java:18`
-- clase 'UserConfiguration' instancia 3 concretos (CBO=17) — `src/main/java/com/prog2/appointment/user/infrastructure/config/UserConfiguration.java:18`
+- clase 'UserConfiguration' muy acoplada (CBO=17) — `src/main/java/com/prog2/appointment/user/infrastructure/config/UserConfiguration.java:21`
+- clase 'UserConfiguration' instancia 3 concretos (CBO=17) — `src/main/java/com/prog2/appointment/user/infrastructure/config/UserConfiguration.java:21`
 - clase 'JpaUserAccountAdapter' muy acoplada (CBO=13) — `src/main/java/com/prog2/appointment/user/infrastructure/persistence/adapter/JpaUserAccountAdapter.java:20`
 - clase 'JpaUserAccountAdapter' instancia 4 concretos (CBO=13) — `src/main/java/com/prog2/appointment/user/infrastructure/persistence/adapter/JpaUserAccountAdapter.java:20`
-- clase 'UserAccountEntity' muy acoplada (CBO=9) — `src/main/java/com/prog2/appointment/user/infrastructure/persistence/entity/UserAccountEntity.java:21`
 - clase 'TransactionalUserAccountStore' muy acoplada (CBO=10) — `src/main/java/com/prog2/appointment/user/infrastructure/persistence/service/TransactionalUserAccountStore.java:22`
 - clase 'NimbusUserTokenIssuerAdapter' muy acoplada (CBO=12) — `src/main/java/com/prog2/appointment/user/infrastructure/security/NimbusUserTokenIssuerAdapter.java:23`
 - clase 'SpringPasswordHasherAdapter' muy acoplada (CBO=11) — `src/main/java/com/prog2/appointment/user/infrastructure/security/SpringPasswordHasherAdapter.java:13`
 - clase 'SpringPasswordHasherAdapter' instancia 5 concretos (CBO=11) — `src/main/java/com/prog2/appointment/user/infrastructure/security/SpringPasswordHasherAdapter.java:13`
 - clase 'UserProblemHandler' muy acoplada (CBO=27) — `src/main/java/com/prog2/appointment/user/infrastructure/web/UserProblemHandler.java:25`
-- clase 'AuthenticationController' muy acoplada (CBO=21) — `src/main/java/com/prog2/appointment/user/infrastructure/web/controller/AuthenticationController.java:25`
-- clase 'RegistrationController' muy acoplada (CBO=22) — `src/main/java/com/prog2/appointment/user/infrastructure/web/controller/RegistrationController.java:25`
+- clase 'AuthenticationController' muy acoplada (CBO=21) — `src/main/java/com/prog2/appointment/user/infrastructure/web/controller/AuthenticationController.java:28`
+- clase 'RegistrationController' muy acoplada (CBO=22) — `src/main/java/com/prog2/appointment/user/infrastructure/web/controller/RegistrationController.java:28`
 
-**SRP/responsabilidad** (118)
+**SRP/responsabilidad** (117)
 - método 'Availability.Availability' con 6 parámetros — `src/main/java/com/prog2/appointment/availability/domain/model/Availability.java:9`
 - método 'ProfessionalAgenda.ProfessionalAgenda' con 5 parámetros — `src/main/java/com/prog2/appointment/availability/domain/model/ProfessionalAgenda.java:9`
 - método 'WeeklySchedule.WeeklySchedule' con 5 parámetros — `src/main/java/com/prog2/appointment/availability/domain/model/WeeklySchedule.java:11`
@@ -267,9 +266,9 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 - método 'StartReservationUseCaseImpl.StartReservationUseCaseImpl' con 8 parámetros — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:38`
 - método 'StartReservationUseCaseImpl.start' de 32 líneas — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:61`
 - método 'StartReservationUseCaseImpl.start' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:61`
-- método 'StartReservationUseCaseImpl.execute' de 40 líneas — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:130`
-- método 'StartReservationUseCaseImpl.execute' con complejidad 9 — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:130`
-- método 'StartReservationUseCaseImpl.createHold' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:171`
+- método 'StartReservationUseCaseImpl.execute' de 40 líneas — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:137`
+- método 'StartReservationUseCaseImpl.execute' con complejidad 9 — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:137`
+- método 'StartReservationUseCaseImpl.createHold' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/application/usecases/StartReservationUseCaseImpl.java:194`
 - método 'SubmitReservationPhoneUseCaseImpl.submit' de 35 líneas — `src/main/java/com/prog2/appointment/reservation/application/usecases/SubmitReservationPhoneUseCaseImpl.java:24`
 - método 'CentralAppointment.CentralAppointment' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/domain/model/CentralAppointment.java:8`
 - método 'OwnReservationPage.OwnReservationPage' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/domain/model/OwnReservationPage.java:6`
@@ -330,32 +329,31 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 - método 'ReservationKafkaChannel.requireReady' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/ReservationKafkaChannel.java:173`
 - método 'ReservationKafkaChannel.verifyMetadata' de 32 líneas — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/ReservationKafkaChannel.java:202`
 - método 'PhoneSubmissionEvent.PhoneSubmissionEvent' con 10 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/messaging/dto/PhoneSubmissionEvent.java:9`
-- clase 'JpaReservationProcessAdapter' grande (LOC=161, métodos=24, campos=1) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:35`
-- método 'JpaReservationProcessAdapter.submitPhone' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:111`
-- método 'JpaReservationProcessAdapter.beginPhonePublication' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:148`
-- método 'JpaReservationProcessAdapter.finishCancellationAttempt' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:178`
-- clase 'ReservationProcessEntity' con baja cohesión (33%) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/entity/ReservationProcessEntity.java:19`
-- método 'ReservationProcessEntity.apply' con complejidad 8 — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/entity/ReservationProcessEntity.java:122`
-- clase 'TransactionalReservationStore' grande (LOC=270, métodos=27, campos=6) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:41`
-- método 'TransactionalReservationStore.submitPhone' de 37 líneas — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:100`
-- método 'TransactionalReservationStore.submitPhone' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:100`
-- método 'TransactionalReservationStore.submitPhone' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:100`
-- método 'TransactionalReservationStore.beginPhonePublication' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:154`
-- método 'TransactionalReservationStore.finishCancellationAttempt' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:227`
+- clase 'JpaReservationProcessAdapter' grande (LOC=178, métodos=24, campos=1) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:36`
+- método 'JpaReservationProcessAdapter.submitPhone' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:121`
+- método 'JpaReservationProcessAdapter.beginPhonePublication' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:161`
+- método 'JpaReservationProcessAdapter.finishCancellationAttempt' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:191`
+- método 'ReservationProcessEntity.apply' con complejidad 8 — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/entity/ReservationProcessEntity.java:123`
+- clase 'TransactionalReservationStore' grande (LOC=292, métodos=27, campos=6) — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:42`
+- método 'TransactionalReservationStore.submitPhone' de 35 líneas — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:108`
+- método 'TransactionalReservationStore.submitPhone' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:108`
+- método 'TransactionalReservationStore.submitPhone' con complejidad 6 — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:108`
+- método 'TransactionalReservationStore.beginPhonePublication' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:160`
+- método 'TransactionalReservationStore.finishCancellationAttempt' con 6 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/service/TransactionalReservationStore.java:240`
 - método 'ReservationProblemHandler.problem' de 41 líneas — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/ReservationProblemHandler.java:67`
 - método 'ReservationProblemHandler.problem' con complejidad 7 — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/ReservationProblemHandler.java:67`
-- método 'ReservationController.list' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/controller/ReservationController.java:70`
+- método 'ReservationController.list' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/controller/ReservationController.java:69`
 - método 'ReservationHistoryResponse.ReservationHistoryResponse' con 5 parámetros — `src/main/java/com/prog2/appointment/reservation/infrastructure/web/dto/ReservationHistoryResponse.java:6`
 - método 'RegistrationData.RegistrationData' con 6 parámetros — `src/main/java/com/prog2/appointment/user/domain/model/RegistrationData.java:6`
 
 **OCP/type-switch** (4)
 - clase 'TechnicalAccessProperties' con 1 type-checks — `src/main/java/com/prog2/appointment/infrastructure/config/TechnicalAccessProperties.java:15`
-- clase 'JwtContractValidator' con 2 type-checks — `src/main/java/com/prog2/appointment/infrastructure/security/jwt/JwtContractValidator.java:16`
-- clase 'JpaReservationProcessAdapter' con 1 type-checks — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:35`
+- clase 'JwtContractValidator' con 2 type-checks — `src/main/java/com/prog2/appointment/infrastructure/security/jwt/JwtContractValidator.java:18`
+- clase 'JpaReservationProcessAdapter' con 1 type-checks — `src/main/java/com/prog2/appointment/reservation/infrastructure/persistence/adapter/JpaReservationProcessAdapter.java:36`
 - clase 'JpaUserAccountAdapter' con 1 type-checks — `src/main/java/com/prog2/appointment/user/infrastructure/persistence/adapter/JpaUserAccountAdapter.java:20`
 
 **duplicación** (6)
-- duplicación lógica: 2.7% · boilerplate: 2.5%
+- duplicación lógica: 2.7% · boilerplate: 3.1%
 - bloque de 8 líneas repetido 3 veces en src/test/java/com/prog2/appointment/reservation/ReservationGatewayTests.java:255, src/test/java/com/prog2/appointment/reservation/ReservationCancellationGatewayTests.java:109, src/test/java/com/prog2/appointment/availability/AvailabilityHttpTests.java:169 — `src/test/java/com/prog2/appointment/reservation/ReservationGatewayTests.java:255`
 - bloque de 8 líneas repetido 4 veces en src/test/java/com/prog2/appointment/reservation/ReservationPhoneIntegrationTests.java:115, src/test/java/com/prog2/appointment/reservation/ReservationCancellationIntegrationTests.java:79, src/test/java/com/prog2/appointment/reservation/OwnReservationsIntegrationTests.java:85 — `src/test/java/com/prog2/appointment/reservation/ReservationPhoneIntegrationTests.java:115`
 - bloque de 8 líneas repetido 4 veces en src/test/java/com/prog2/appointment/reservation/ReservationPhoneIntegrationTests.java:116, src/test/java/com/prog2/appointment/reservation/ReservationCancellationIntegrationTests.java:80, src/test/java/com/prog2/appointment/reservation/OwnReservationsIntegrationTests.java:86 — `src/test/java/com/prog2/appointment/reservation/ReservationPhoneIntegrationTests.java:116`
@@ -364,14 +362,14 @@ El análisis encontró las siguientes señales, con el archivo y la línea donde
 
 ## 6. Evolución por commit
 
-Métricas calculadas sobre el estado de `main` en **cada commit** (19 commits con trabajo), del primero al último. La calidad usa el perfil `exigente`; el aporte de código lo mide RepoSense. El índice puede **bajar** al crecer el proyecto: se acumulan señales.
+Métricas calculadas sobre el estado de `main` en **cada commit** (20 commits con trabajo), del primero al último. La calidad usa el perfil `exigente`; el aporte de código lo mide RepoSense. El índice puede **bajar** al crecer el proyecto: se acumulan señales.
 
 ```mermaid
 xychart-beta
     title "Índice de calidad a lo largo de los commits"
-    x-axis ["c93d5d5", "3a1915d", "cef4c4f", "201a9bb", "3733c22", "5e84aaa", "1a2356f", "ff099f9", "093f285", "f0e452d", "cac8188", "982c8db", "cebeabe", "5eaafca", "8f5606a", "ded03db", "cbefa63", "b124b25", "d386063"]
+    x-axis ["c93d5d5", "3a1915d", "cef4c4f", "201a9bb", "3733c22", "5e84aaa", "1a2356f", "ff099f9", "093f285", "f0e452d", "cac8188", "982c8db", "cebeabe", "5eaafca", "8f5606a", "ded03db", "cbefa63", "b124b25", "d386063", "2f56582"]
     y-axis "Índice" 0 --> 100
-    line [0, 15, 15, 39, 44, 53, 57, 57, 59, 61, 65, 66, 66, 66, 66, 66, 66, 66, 66]
+    line [0, 15, 15, 39, 44, 53, 57, 57, 59, 61, 65, 66, 66, 66, 66, 66, 66, 66, 66, 66]
 ```
 
 | # | Fecha | Commit | Autor | LOC | Índice | %POO | Duplic. | Sueltas |
@@ -395,6 +393,7 @@ xychart-beta
 | 17 | 2026-11-09 | `cbefa63` | Valentino Perassi Ferrara | 17,710 | 66 | 78% | 2.7% | 0 |
 | 18 | 2026-11-11 | `b124b25` | Valentino Perassi Ferrara | 17,968 | 66 | 78% | 2.7% | 0 |
 | 19 | 2026-11-17 | `d386063` | Valentino Perassi Ferrara | 17,986 | 66 | 78% | 2.7% | 0 |
+| 20 | 2026-11-19 | `2f56582` | Ing. Daniel Quinteros | 18,001 | 66 | 78% | 2.7% | 0 |
 
 ---
 _Informe generado por la cátedra. Las dimensiones y umbrales corresponden a `calidad.py` (perfil `exigente`); el semáforo, a `CRITERIOS-CALIDAD.md`. La documentación del repositorio no se evalúa. Ante dudas, revisá el archivo señalado._
